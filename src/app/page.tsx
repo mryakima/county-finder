@@ -75,8 +75,13 @@ function coordsCopyText(lat: number, lon: number): string {
 
 function buildShareText(result: LookupSuccess, position: PositionSnapshot | null): string {
   const lines = [`${result.countyName}, ${result.stateName}`];
-  if (position) lines.push(`${fmt6(position.lat)}, ${fmt6(position.lon)} (${formatAccuracy(position.accuracy)})`);
-  lines.push("https://countyfinder.chasereport.com");
+  if (position) {
+    lines.push(`${fmt6(position.lat)}, ${fmt6(position.lon)} (${formatAccuracy(position.accuracy)})`);
+    if (position.altitude !== null) {
+      lines.push(`Elevation: ${Math.round(position.altitude * 3.28084).toLocaleString()} ft`);
+    }
+  }
+  lines.push("https://currentcounty.com");
   return lines.join("\n");
 }
 
