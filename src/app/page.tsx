@@ -231,6 +231,8 @@ export default function HomePage() {
         const snap: PositionSnapshot = {
           lat: pos.coords.latitude, lon: pos.coords.longitude,
           accuracy: pos.coords.accuracy, timestamp: pos.timestamp,
+          altitude: pos.coords.altitude,
+          altitudeAccuracy: pos.coords.altitudeAccuracy,
         };
 
         const isFirstFix = lastLookupMsRef.current === 0;
@@ -290,7 +292,7 @@ export default function HomePage() {
         setStatus("locating");
         navigator.geolocation.getCurrentPosition(
           (pos) => {
-            const snap = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy, timestamp: pos.timestamp };
+            const snap = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy, timestamp: pos.timestamp, altitude: pos.coords.altitude, altitudeAccuracy: pos.coords.altitudeAccuracy };
             setCached(c); setPosition(snap);
             setStatus(pointInGeometry(snap.lat, snap.lon, c.geometry) ? "offline_verified" : "offline_unverified");
           },
@@ -468,19 +470,25 @@ function renderContent(p: ContentProps) {
           </>
         )}
 
-        {/* eBird link */}
-        <div className="ebird-row">
-          <a className="btn btn-ebird" style={{ width: "100%", justifyContent: "center" }} href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer">
-            eBird →
-          </a>
-        </div>
-
         {/* Coordinate details */}
         <div className="details-list">
           <div className="detail-row">
             <span className="detail-label">Accuracy</span>
             <span className="detail-value">{formatAccuracy(position.accuracy)}</span>
           </div>
+          {position.altitude !== null && (
+            <div className="detail-row">
+              <span className="detail-label">Elevation</span>
+              <span className="detail-value">
+                {Math.round(position.altitude * 3.28084).toLocaleString()} ft
+                {position.altitudeAccuracy !== null && (
+                  <span style={{ color: "var(--color-text-muted)", fontSize: "var(--font-size-xs)" }}>
+                    {" "}(±{Math.round(position.altitudeAccuracy * 3.28084)} ft)
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
           <div className="detail-row">
             <span className="detail-label" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               Coords
@@ -515,6 +523,13 @@ function renderContent(p: ContentProps) {
             <CopyButton label="Copy coords" text={coordsCopyText(position.lat, position.lon)} variant="secondary" />
             <CopyButton label="Copy result" text={buildFullCopyText(result, position)} variant="secondary" />
           </div>
+        </div>
+
+        {/* eBird — bottom of card */}
+        <div className="ebird-row" style={{ marginTop: "var(--spacing-2)", marginBottom: 0 }}>
+          <a className="btn btn-ebird" style={{ width: "100%", justifyContent: "center" }} href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer">
+            eBird →
+          </a>
         </div>
       </div>
     );

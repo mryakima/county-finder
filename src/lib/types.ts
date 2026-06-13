@@ -129,4 +129,7 @@ export interface PositionSnapshot {
   lon: number;
   accuracy: number; // meters
   timestamp: number; // milliseconds since epoch
+  /** Altitude in meters above WGS84 ellipsoid. Null if device doesn't provide it. */
+  altitude: number | null;
+  altitudeAccuracy: number | null;
 }
