@@ -58,6 +58,13 @@ export interface LookupSuccess {
   matchMethod: "point-in-polygon";
   boundaryWarning: boolean;
   /**
+   * Distance in meters from the queried point to the nearest county boundary.
+   * Useful for birders determining which side of a county line they are on.
+   */
+  distanceToBoundaryM: number;
+  /** Bearing in degrees (0–360, clockwise from north) toward the nearest boundary point. */
+  bearingToBoundary: number;
+  /**
    * County geometry included in the API response so the client can cache it
    * for offline verification. Clients should save this, then strip it from
    * display data.

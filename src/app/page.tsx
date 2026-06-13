@@ -48,6 +48,26 @@ function formatAccuracy(meters: number): string {
   return `±${Math.round(meters)} m`;
 }
 
+function formatBoundaryDistance(meters: number): string {
+  const feet = meters * 3.28084;
+  const miles = meters / 1609.344;
+  if (feet < 528) return `${Math.round(feet)} ft`;
+  if (miles < 10) return `${miles.toFixed(1)} mi`;
+  return `${Math.round(miles)} mi`;
+}
+
+function bearingToCardinal(deg: number): string {
+  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
+function boundaryDistanceColor(meters: number): string {
+  const feet = meters * 3.28084;
+  if (feet < 300) return "var(--color-error)";
+  if (feet < 2640) return "var(--color-warning)"; // < 0.5 mi
+  return "var(--color-success)";
+}
+
 function formatTimestamp(ts: number): string {
   return new Date(ts).toLocaleString(undefined, {
     month: "short",
@@ -443,6 +463,33 @@ function renderContent(state: AppState, onRefresh: () => void) {
           <div className="county-display">
             <div className="county-name">{result.countyName}</div>
             <div className="state-name">{result.stateName}</div>
+          </div>
+
+          {/* County line distance — prominent for birders */}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "var(--color-bg)",
+            borderRadius: "var(--radius-md)",
+            padding: "var(--spacing-3) var(--spacing-4)",
+            marginBottom: "var(--spacing-3)",
+            border: `2px solid ${boundaryDistanceColor(result.distanceToBoundaryM)}`,
+          }}>
+            <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>
+              County line
+            </span>
+            <span style={{
+              fontWeight: 700,
+              fontSize: "var(--font-size-xl)",
+              color: boundaryDistanceColor(result.distanceToBoundaryM),
+              fontVariantNumeric: "tabular-nums",
+            }}>
+              {formatBoundaryDistance(result.distanceToBoundaryM)}{" "}
+              <span style={{ fontSize: "var(--font-size-base)", opacity: 0.8 }}>
+                {bearingToCardinal(result.bearingToBoundary)}
+              </span>
+            </span>
           </div>
 
           <div className="details-list">

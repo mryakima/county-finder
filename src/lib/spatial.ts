@@ -153,6 +153,11 @@ export function lookupCounty(
         geoid: county.geoid,
         // Include geometry so client can cache it for offline PIP verification.
         geometry: county.geometry,
+        // Distance and bearing to the nearest county boundary.
+        ...(() => {
+          const { distanceM, bearing } = distanceToBoundary(lat, lon, county.geometry);
+          return { distanceToBoundaryM: distanceM, bearingToBoundary: bearing };
+        })(),
         lat,
         lon,
         lookupTimestamp: new Date().toISOString(),
@@ -170,6 +175,111 @@ export function lookupCounty(
     errorCode: "NO_MATCH",
     message:
       "Could not match coordinates to a county. The point may be near a boundary, coastline, or outside the mapped area.",
+  };
+}
+
+// ── Boundary distance / bearing ──────────────────────────────────────────────
+// Implemented without extra dependencies.
+// All inputs/outputs in lat/lon (browser convention).
+// GeoJSON coordinates are [longitude, latitude] — conversions noted inline.
+
+/** Haversine distance in meters between two lat/lon points. */
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Initial bearing in degrees (0–360, clockwise from north) from point 1 to point 2. */
+function bearingDeg(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
+
+/**
+ * Find the nearest point on a polygon ring to (lat, lon).
+ * Ring coordinates are GeoJSON order: [longitude, latitude].
+ */
+function nearestOnRing(
+  lat: number,
+  lon: number,
+  ring: number[][]
+): { nearLat: number; nearLon: number; distM: number } {
+  let minDist = Infinity;
+  let nearLat = lat;
+  let nearLon = lon;
+
+  for (let i = 0; i < ring.length - 1; i++) {
+    // GeoJSON: coord = [longitude, latitude]
+    const ax = ring[i][0],     ay = ring[i][1];     // lon, lat of vertex A
+    const bx = ring[i + 1][0], by = ring[i + 1][1]; // lon, lat of vertex B
+
+    // Project (lon, lat) onto segment A→B in lon/lat space.
+    // Not perfectly geodetic, but accurate enough at county scale.
+    const dx = bx - ax;
+    const dy = by - ay;
+    let t = 0;
+    if (dx !== 0 || dy !== 0) {
+      t = Math.max(0, Math.min(1, ((lon - ax) * dx + (lat - ay) * dy) / (dx * dx + dy * dy)));
+    }
+    const nx = ax + t * dx; // nearest lon on segment
+    const ny = ay + t * dy; // nearest lat on segment
+
+    // ny = latitude, nx = longitude (GeoJSON was [lon, lat])
+    const d = haversineMeters(lat, lon, ny, nx);
+    if (d < minDist) {
+      minDist = d;
+      nearLat = ny;
+      nearLon = nx;
+    }
+  }
+
+  return { nearLat, nearLon, distM: minDist };
+}
+
+/**
+ * Returns the distance in meters and bearing to the nearest county boundary
+ * from the given (lat, lon).
+ *
+ * Checks all rings (exterior + holes, all polygons of a MultiPolygon)
+ * so enclaves are handled correctly.
+ */
+export function distanceToBoundary(
+  lat: number,
+  lon: number,
+  geometry: Polygon | MultiPolygon
+): { distanceM: number; bearing: number } {
+  let minDist = Infinity;
+  let bestLat = lat;
+  let bestLon = lon;
+
+  const rings: number[][][] =
+    geometry.type === "Polygon"
+      ? (geometry.coordinates as number[][][])
+      : (geometry.coordinates.flat() as number[][][]);
+
+  for (const ring of rings) {
+    const { nearLat, nearLon, distM } = nearestOnRing(lat, lon, ring as number[][]);
+    if (distM < minDist) {
+      minDist = distM;
+      bestLat = nearLat;
+      bestLon = nearLon;
+    }
+  }
+
+  return {
+    distanceM: minDist,
+    bearing: bearingDeg(lat, lon, bestLat, bestLon),
   };
 }
 
