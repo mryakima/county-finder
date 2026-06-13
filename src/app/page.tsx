@@ -26,7 +26,6 @@ function toDMS(decimal: number, isLat: boolean): string {
 function fmtLat(n: number, fmt: CoordFormat): string {
   return fmt === "dms" ? toDMS(n, true) : fmt6(n);
 }
-
 function fmtLon(n: number, fmt: CoordFormat): string {
   return fmt === "dms" ? toDMS(n, false) : fmt6(n);
 }
@@ -60,34 +59,26 @@ function formatTimestamp(ts: number): string {
     hour: "2-digit", minute: "2-digit",
   });
 }
-
-function formatIso(iso: string): string {
-  return formatTimestamp(new Date(iso).getTime());
-}
+function formatIso(iso: string): string { return formatTimestamp(new Date(iso).getTime()); }
 
 // ── eBird utilities ───────────────────────────────────────────────────────────
 
-/** Constructs the eBird region code, e.g. "US-NM-003" from stateAbbr + 5-digit GEOID. */
-function eBirdRegionCode(stateAbbr: string, geoid: string): string {
-  return `US-${stateAbbr}-${geoid.slice(2)}`;
+function eBirdUrl(stateAbbr: string, geoid: string): string {
+  return `https://ebird.org/region/US-${stateAbbr}-${geoid.slice(2)}/recent`;
 }
 
-function eBirdUrl(code: string): string {
-  return `https://ebird.org/region/${code}/recent`;
-}
-
-// ── Share / copy text builders ────────────────────────────────────────────────
+// ── Share / copy ──────────────────────────────────────────────────────────────
 
 function coordsCopyText(lat: number, lon: number): string {
   return `${fmt6(lat)}, ${fmt6(lon)}`;
 }
 
 function buildShareText(result: LookupSuccess, position: PositionSnapshot | null): string {
-  const code = eBirdRegionCode(result.stateAbbr, result.geoid);
-  const lines = [`${result.countyName}, ${result.stateName}`, `eBird: ${code}`];
-  if (position) {
-    lines.push(`${fmt6(position.lat)}, ${fmt6(position.lon)} (${formatAccuracy(position.accuracy)})`);
-  }
+  const lines = [
+    `${result.countyName}, ${result.stateName}`,
+    `eBird: US-${result.stateAbbr}-${result.geoid.slice(2)}`,
+  ];
+  if (position) lines.push(`${fmt6(position.lat)}, ${fmt6(position.lon)} (${formatAccuracy(position.accuracy)})`);
   lines.push("https://countyfinder.chasereport.com");
   return lines.join("\n");
 }
@@ -110,33 +101,33 @@ function CopyButton({ label, text, variant = "secondary" }: {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); }
-    catch { /* fallback */ const el = Object.assign(document.createElement("textarea"), { value: text, style: "position:fixed;opacity:0" }); document.body.appendChild(el); el.select(); document.execCommand("copy"); el.remove(); }
+    catch {
+      const el = Object.assign(document.createElement("textarea"), { value: text, style: "position:fixed;opacity:0" });
+      document.body.appendChild(el); el.select(); document.execCommand("copy"); el.remove();
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
   return <button className={`btn btn-${variant}`} onClick={copy}>{copied ? "✓ Copied" : label}</button>;
 }
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const LIVE_MIN_INTERVAL_MS = 3000; // min ms between background lookups
+const CLOSE_BOUNDARY_M = 91;       // ~300 ft — threshold for dual-county banner
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-const LIVE_MIN_INTERVAL_MS = 3000;
-const CLOSE_BOUNDARY_M = 91; // ~300 ft — threshold for dual-county banner
-
 export default function HomePage() {
-  // Core state
   const [status, setStatus] = useState<AppStatus>("init");
   const [position, setPosition] = useState<PositionSnapshot | null>(null);
   const [result, setResult] = useState<LookupSuccess | null>(null);
   const [cached, setCached] = useState<CachedResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  // New feature state
-  const [liveMode, setLiveMode] = useState(false);
   const [coordFormat, setCoordFormat] = useState<CoordFormat>("decimal");
   const [countyChangedAlert, setCountyChangedAlert] = useState<string | null>(null);
   const [cardFlash, setCardFlash] = useState(false);
 
-  // Refs
   const abortRef = useRef<AbortController | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const lastGeoidRef = useRef<string | null>(null);
@@ -154,12 +145,12 @@ export default function HomePage() {
     localStorage.setItem("county-finder:coord-format", next);
   };
 
-  // ── County-change detection ─────────────────────────────────────────────────
+  // ── County-change detection (always-on) ──────────────────────────────────────
+  // Fires automatically whenever the matched county changes — no user action needed.
   useEffect(() => {
-    if (!liveMode || !result) return;
+    if (!result) return;
     const geoid = result.geoid;
     if (lastGeoidRef.current && lastGeoidRef.current !== geoid) {
-      // Crossed a county line
       setCountyChangedAlert(`Entered ${result.countyName}`);
       setCardFlash(true);
       if ("vibrate" in navigator) navigator.vibrate([150, 80, 150]);
@@ -167,11 +158,11 @@ export default function HomePage() {
       setTimeout(() => setCardFlash(false), 900);
     }
     lastGeoidRef.current = geoid;
-  }, [result?.geoid, liveMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [result?.geoid]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Core lookup ─────────────────────────────────────────────────────────────
-  const runLookup = useCallback(async (snap: PositionSnapshot, isLiveUpdate = false) => {
-    if (!isLiveUpdate) {
+  // ── Core lookup ───────────────────────────────────────────────────────────────
+  const runLookup = useCallback(async (snap: PositionSnapshot, isBackgroundUpdate = false) => {
+    if (!isBackgroundUpdate) {
       setStatus("looking_up");
       setPosition(snap);
     }
@@ -200,51 +191,69 @@ export default function HomePage() {
         setErrorMessage(null);
       } else {
         const code = data.errorCode as string;
-        setStatus(code === "OUT_OF_SCOPE" ? "out_of_scope" : code === "NO_MATCH" ? "no_match" : "api_error");
-        setErrorMessage(data.message);
+        // On background updates, don't clobber a good result with an error
+        if (!isBackgroundUpdate) {
+          setStatus(code === "OUT_OF_SCOPE" ? "out_of_scope" : code === "NO_MATCH" ? "no_match" : "api_error");
+          setErrorMessage(data.message);
+        }
       }
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
-      const c = loadCache();
-      if (c) {
-        const inside = pointInGeometry(snap.lat, snap.lon, c.geometry);
-        setCached(c);
-        setPosition(snap);
-        setStatus(inside ? "offline_verified" : "offline_unverified");
-      } else {
-        setStatus("api_error");
-        setErrorMessage("Could not reach the server and no cached result is available.");
+      if (!isBackgroundUpdate) {
+        const c = loadCache();
+        if (c) {
+          const inside = pointInGeometry(snap.lat, snap.lon, c.geometry);
+          setCached(c); setPosition(snap);
+          setStatus(inside ? "offline_verified" : "offline_unverified");
+        } else {
+          setStatus("api_error");
+          setErrorMessage("Could not reach the server and no cached result is available.");
+        }
       }
     }
   }, []);
 
-  // ── Geolocation ─────────────────────────────────────────────────────────────
-  const requestLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setStatus("no_geolocation");
-      return;
+  // ── Always-on background tracking ────────────────────────────────────────────
+  // Starts watchPosition automatically. The first fix triggers the initial lookup;
+  // subsequent fixes update silently in the background (rate-limited to 3 s).
+  const startTracking = useCallback(() => {
+    if (!navigator.geolocation) { setStatus("no_geolocation"); return; }
+
+    // Clear any existing watch
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
     }
+
     setStatus("locating");
     setErrorMessage(null);
+    lastLookupMsRef.current = 0; // allow immediate first lookup
 
-    navigator.geolocation.getCurrentPosition(
+    const id = navigator.geolocation.watchPosition(
       (pos) => {
         const snap: PositionSnapshot = {
           lat: pos.coords.latitude, lon: pos.coords.longitude,
           accuracy: pos.coords.accuracy, timestamp: pos.timestamp,
         };
+
+        const isFirstFix = lastLookupMsRef.current === 0;
+        const now = Date.now();
+
+        if (!isFirstFix && now - lastLookupMsRef.current < LIVE_MIN_INTERVAL_MS) return;
+        lastLookupMsRef.current = now;
+
         if (!isOnline()) {
           const c = loadCache();
           if (c) {
-            setCached(c);
-            setPosition(snap);
+            setCached(c); setPosition(snap);
             setStatus(pointInGeometry(snap.lat, snap.lon, c.geometry) ? "offline_verified" : "offline_unverified");
           } else {
             setStatus("offline_no_cache");
           }
           return;
         }
-        runLookup(snap);
+
+        runLookup(snap, !isFirstFix);
       },
       (err) => {
         setStatus(
@@ -253,58 +262,28 @@ export default function HomePage() {
         );
         setErrorMessage(err.message);
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
-    );
-  }, [runLookup]);
-
-  // ── Live mode ────────────────────────────────────────────────────────────────
-  const startLiveMode = useCallback(() => {
-    if (!navigator.geolocation) return;
-    setLiveMode(true);
-    lastGeoidRef.current = result?.geoid ?? null;
-
-    const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        const now = Date.now();
-        if (now - lastLookupMsRef.current < LIVE_MIN_INTERVAL_MS) return;
-        lastLookupMsRef.current = now;
-        const snap: PositionSnapshot = {
-          lat: pos.coords.latitude, lon: pos.coords.longitude,
-          accuracy: pos.coords.accuracy, timestamp: pos.timestamp,
-        };
-        runLookup(snap, true);
-      },
-      () => { /* ignore individual watch errors */ },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
     );
     watchIdRef.current = id;
-  }, [runLookup, result?.geoid]);
-
-  const stopLiveMode = useCallback(() => {
-    setLiveMode(false);
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-  }, []);
+  }, [runLookup]);
 
   // Cleanup watch on unmount
   useEffect(() => () => {
     if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
   }, []);
 
-  // ── Share ────────────────────────────────────────────────────────────────────
+  // ── Share ─────────────────────────────────────────────────────────────────────
   const handleShare = useCallback(async () => {
     if (!result) return;
     const text = buildShareText(result, position);
     if (navigator.share) {
       try { await navigator.share({ title: "Current County", text }); return; }
-      catch { /* fall through to clipboard */ }
+      catch { /* fall through */ }
     }
     await navigator.clipboard.writeText(text);
   }, [result, position]);
 
-  // ── Initial load ─────────────────────────────────────────────────────────────
+  // ── Initial load ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const c = loadCache();
     if (c) setCached(c);
@@ -315,8 +294,7 @@ export default function HomePage() {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             const snap = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy, timestamp: pos.timestamp };
-            setCached(c);
-            setPosition(snap);
+            setCached(c); setPosition(snap);
             setStatus(pointInGeometry(snap.lat, snap.lon, c.geometry) ? "offline_verified" : "offline_unverified");
           },
           () => { setCached(c); setStatus("offline_no_position"); },
@@ -327,7 +305,8 @@ export default function HomePage() {
       }
       return;
     }
-    requestLocation();
+
+    startTracking();
 
     const handleOffline = () => {
       setStatus((s) => {
@@ -343,12 +322,11 @@ export default function HomePage() {
     return () => window.removeEventListener("offline", handleOffline);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleRefresh = () => { stopLiveMode(); abortRef.current?.abort(); requestLocation(); };
+  const handleRefresh = () => { abortRef.current?.abort(); startTracking(); };
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="app-shell">
-      {/* County-change toast */}
       {countyChangedAlert && (
         <div className="county-toast">🎉 {countyChangedAlert}</div>
       )}
@@ -364,11 +342,8 @@ export default function HomePage() {
 
       <main className="app-main">
         {renderContent({
-          status, position, result, cached, errorMessage,
-          liveMode, coordFormat, cardFlash,
+          status, position, result, cached, errorMessage, coordFormat, cardFlash,
           onRefresh: handleRefresh,
-          onStartLive: startLiveMode,
-          onStopLive: stopLiveMode,
           onShare: handleShare,
           onToggleCoordFormat: toggleCoordFormat,
         })}
@@ -391,20 +366,17 @@ interface ContentProps {
   result: LookupSuccess | null;
   cached: CachedResult | null;
   errorMessage: string | null;
-  liveMode: boolean;
   coordFormat: CoordFormat;
   cardFlash: boolean;
   onRefresh: () => void;
-  onStartLive: () => void;
-  onStopLive: () => void;
   onShare: () => void;
   onToggleCoordFormat: () => void;
 }
 
 function renderContent(p: ContentProps) {
-  const { status, position, result, cached, errorMessage, liveMode, coordFormat, cardFlash } = p;
+  const { status, position, result, cached, errorMessage, coordFormat, cardFlash } = p;
 
-  // ── Locating / looking up ─────────────────────────────────────────────────
+  // ── Locating / looking up ──────────────────────────────────────────────────
 
   if (status === "init" || status === "locating" || status === "looking_up") {
     return (
@@ -428,149 +400,131 @@ function renderContent(p: ContentProps) {
     );
   }
 
-  // ── Success ───────────────────────────────────────────────────────────────
+  // ── Success ────────────────────────────────────────────────────────────────
 
   if (status === "success" && result && position) {
     const isClose = result.distanceToBoundaryM <= CLOSE_BOUNDARY_M;
     const boundaryColor = boundaryDistanceColor(result.distanceToBoundaryM);
     const cardinal = bearingToCardinal(result.bearingToBoundary);
     const distLabel = formatBoundaryDistance(result.distanceToBoundaryM);
-    const code = eBirdRegionCode(result.stateAbbr, result.geoid);
 
     return (
-      <>
-        <div className={`status-card${cardFlash ? " county-flash" : ""}`}>
-          {/* Status + live indicator */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--spacing-4)" }}>
-            <div className="status-badge success" style={{ margin: 0 }}>
-              {liveMode ? <><span className="live-dot" /> Live</> : "✓ Located"}
+      <div className={`status-card${cardFlash ? " county-flash" : ""}`}>
+        <div className="status-badge success" style={{ marginBottom: "var(--spacing-4)" }}>
+          ✓ Located
+        </div>
+
+        {/* Dual-county banner when very close to line */}
+        {isClose ? (
+          <div className="dual-county">
+            <div className="dual-county-side current">
+              <div className="dual-county-label">You are here</div>
+              <div className="dual-county-name current">{result.countyBaseName}</div>
+              <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>{result.stateAbbr}</div>
             </div>
-            {liveMode
-              ? <button className="btn btn-live" style={{ padding: "4px 12px", minHeight: 32, fontSize: "var(--font-size-xs)" }} onClick={p.onStopLive}>■ Stop</button>
-              : <button className="btn btn-ghost" style={{ padding: "4px 12px", minHeight: 32, fontSize: "var(--font-size-xs)" }} onClick={p.onStartLive}>▶ Live</button>
-            }
+            <div className="dual-county-divider">
+              <div className="dual-county-dist">{distLabel}</div>
+              <div className="dual-county-dir">{cardinal}</div>
+            </div>
+            <div className="dual-county-side adjacent">
+              {result.adjacentCountyName ? (
+                <>
+                  <div className="dual-county-label">Next county</div>
+                  <div className="dual-county-name adjacent">{result.adjacentCountyName}</div>
+                  {result.adjacentCountyState && result.adjacentCountyState !== result.stateAbbr && (
+                    <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>{result.adjacentCountyState}</div>
+                  )}
+                </>
+              ) : (
+                <div className="dual-county-label" style={{ paddingTop: "var(--spacing-3)" }}>Water / border</div>
+              )}
+            </div>
           </div>
-
-          {/* Dual-county banner when very close to line */}
-          {isClose ? (
-            <div className="dual-county">
-              <div className="dual-county-side current">
-                <div className="dual-county-label">You are here</div>
-                <div className="dual-county-name current">{result.countyBaseName}</div>
-                <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>{result.stateAbbr}</div>
-              </div>
-              <div className="dual-county-divider">
-                <div className="dual-county-dist">{distLabel}</div>
-                <div className="dual-county-dir">{cardinal}</div>
-              </div>
-              <div className="dual-county-side adjacent">
-                {result.adjacentCountyName ? (
-                  <>
-                    <div className="dual-county-label">Next county</div>
-                    <div className="dual-county-name adjacent">{result.adjacentCountyName}</div>
-                    {result.adjacentCountyState && result.adjacentCountyState !== result.stateAbbr && (
-                      <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>{result.adjacentCountyState}</div>
-                    )}
-                  </>
-                ) : (
-                  <div className="dual-county-label" style={{ paddingTop: "var(--spacing-3)" }}>Water / border</div>
-                )}
-              </div>
+        ) : (
+          <>
+            {/* Normal county display */}
+            <div className="county-display">
+              <div className="county-name">{result.countyName}</div>
+              <div className="state-name">{result.stateName}</div>
             </div>
-          ) : (
-            <>
-              {/* Normal county display */}
-              <div className="county-display">
-                <div className="county-name">{result.countyName}</div>
-                <div className="state-name">{result.stateName}</div>
-              </div>
 
-              {/* County line distance box */}
-              <div style={{
-                background: "var(--color-bg)", borderRadius: "var(--radius-md)",
-                padding: "var(--spacing-3) var(--spacing-4)", marginBottom: "var(--spacing-3)",
-                border: `2px solid ${boundaryColor}`,
-              }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>County line</span>
-                  <span style={{ fontWeight: 700, fontSize: "var(--font-size-xl)", color: boundaryColor, fontVariantNumeric: "tabular-nums" }}>
-                    {distLabel}{" "}
-                    <span style={{ fontSize: "var(--font-size-base)", opacity: 0.8 }}>{cardinal}</span>
-                  </span>
+            {/* County line distance */}
+            <div style={{
+              background: "var(--color-bg)", borderRadius: "var(--radius-md)",
+              padding: "var(--spacing-3) var(--spacing-4)", marginBottom: "var(--spacing-3)",
+              border: `2px solid ${boundaryColor}`,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>County line</span>
+                <span style={{ fontWeight: 700, fontSize: "var(--font-size-xl)", color: boundaryColor, fontVariantNumeric: "tabular-nums" }}>
+                  {distLabel}{" "}
+                  <span style={{ fontSize: "var(--font-size-base)", opacity: 0.8 }}>{cardinal}</span>
+                </span>
+              </div>
+              {result.adjacentCountyName && (
+                <div style={{ marginTop: "var(--spacing-1)", fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", textAlign: "right" }}>
+                  → {result.adjacentCountyName}
+                  {result.adjacentCountyState && result.adjacentCountyState !== result.stateAbbr ? `, ${result.adjacentCountyState}` : ""}
                 </div>
-                {result.adjacentCountyName && (
-                  <div style={{ marginTop: "var(--spacing-1)", fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", textAlign: "right" }}>
-                    → {result.adjacentCountyName}
-                    {result.adjacentCountyState && result.adjacentCountyState !== result.stateAbbr ? `, ${result.adjacentCountyState}` : ""}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* eBird row */}
-          <div className="ebird-row">
-            <span className="ebird-code">{code}</span>
-            <div style={{ display: "flex", gap: "var(--spacing-2)" }}>
-              <CopyButton label="Copy" text={code} variant="secondary" />
-              <a className="btn btn-ebird" href={eBirdUrl(code)} target="_blank" rel="noopener noreferrer">
-                eBird →
-              </a>
+              )}
             </div>
+          </>
+        )}
+
+        {/* eBird link */}
+        <div className="ebird-row">
+          <span style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>Recent sightings</span>
+          <a className="btn btn-ebird" href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer">
+            eBird →
+          </a>
+        </div>
+
+        {/* Coordinate details */}
+        <div className="details-list">
+          <div className="detail-row">
+            <span className="detail-label">Accuracy</span>
+            <span className="detail-value">{formatAccuracy(position.accuracy)}</span>
           </div>
-
-          {/* Coordinate details with format toggle */}
-          <div className="details-list">
-            <div className="detail-row">
-              <span className="detail-label">Accuracy</span>
-              <span className="detail-value">{formatAccuracy(position.accuracy)}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                Coords
-                <button className="coord-toggle" onClick={p.onToggleCoordFormat}>
-                  {coordFormat === "decimal" ? "DMS" : "Dec"}
-                </button>
-              </span>
-              <span className="detail-value" style={{ fontVariantNumeric: "tabular-nums" }}>
-                {fmtLat(position.lat, coordFormat)}<br />
-                {fmtLon(position.lon, coordFormat)}
-              </span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Location time</span>
-              <span className="detail-value">{formatTimestamp(position.timestamp)}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Lookup time</span>
-              <span className="detail-value">{formatIso(result.lookupTimestamp)}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">GEOID</span>
-              <span className="detail-value">{result.geoid}</span>
-            </div>
+          <div className="detail-row">
+            <span className="detail-label" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              Coords
+              <button className="coord-toggle" onClick={p.onToggleCoordFormat}>
+                {coordFormat === "decimal" ? "DMS" : "Dec"}
+              </button>
+            </span>
+            <span className="detail-value" style={{ fontVariantNumeric: "tabular-nums" }}>
+              {fmtLat(position.lat, coordFormat)}<br />
+              {fmtLon(position.lon, coordFormat)}
+            </span>
           </div>
-
-          {/* Action buttons */}
-          <div className="btn-group">
-            {!liveMode && (
-              <div className="btn-row">
-                <button className="btn btn-primary" onClick={p.onStartLive}>▶ Live</button>
-                <button className="btn btn-secondary" onClick={p.onRefresh}>↻ Refresh</button>
-              </div>
-            )}
-            <button className="btn btn-ghost" onClick={p.onShare}>⬆ Share</button>
-            <div className="btn-row">
-              <CopyButton label="Copy coords" text={coordsCopyText(position.lat, position.lon)} variant="secondary" />
-              <CopyButton label="Copy result" text={buildFullCopyText(result, position)} variant="secondary" />
-            </div>
+          <div className="detail-row">
+            <span className="detail-label">Location time</span>
+            <span className="detail-value">{formatTimestamp(position.timestamp)}</span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-label">Lookup time</span>
+            <span className="detail-value">{formatIso(result.lookupTimestamp)}</span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-label">GEOID</span>
+            <span className="detail-value">{result.geoid}</span>
           </div>
         </div>
-      </>
+
+        {/* Actions */}
+        <div className="btn-group">
+          <button className="btn btn-primary" onClick={p.onRefresh}>↻ Refresh</button>
+          <button className="btn btn-ghost" onClick={p.onShare}>⬆ Share</button>
+          <div className="btn-row">
+            <CopyButton label="Copy coords" text={coordsCopyText(position.lat, position.lon)} variant="secondary" />
+            <CopyButton label="Copy result" text={buildFullCopyText(result, position)} variant="secondary" />
+          </div>
+        </div>
+      </div>
     );
   }
 
-  // ── Offline verified ──────────────────────────────────────────────────────
+  // ── Offline verified ───────────────────────────────────────────────────────
 
   if (status === "offline_verified" && cached) {
     const pos = position;
@@ -600,7 +554,7 @@ function renderContent(p: ContentProps) {
     );
   }
 
-  // ── Offline unverified ────────────────────────────────────────────────────
+  // ── Offline unverified ─────────────────────────────────────────────────────
 
   if ((status === "offline_unverified" || status === "offline_no_position") && cached) {
     const pos = position;
@@ -614,7 +568,7 @@ function renderContent(p: ContentProps) {
         </div>
         <p style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", marginBottom: "var(--spacing-3)" }}>
           {status === "offline_no_position"
-            ? "Could not get your current location while offline. Showing last known county only."
+            ? "Could not get your current location while offline."
             : "Current location appears to be outside the cached county boundary."}
         </p>
         <div className="details-list">
@@ -629,7 +583,7 @@ function renderContent(p: ContentProps) {
     );
   }
 
-  // ── Offline no cache ──────────────────────────────────────────────────────
+  // ── Offline no cache ───────────────────────────────────────────────────────
 
   if (status === "offline_no_cache") {
     return (
@@ -642,7 +596,7 @@ function renderContent(p: ContentProps) {
     );
   }
 
-  // ── Permission denied ─────────────────────────────────────────────────────
+  // ── Permission denied ──────────────────────────────────────────────────────
 
   if (status === "permission_denied") {
     return (
@@ -663,7 +617,7 @@ function renderContent(p: ContentProps) {
     );
   }
 
-  // ── No geolocation ────────────────────────────────────────────────────────
+  // ── No geolocation ─────────────────────────────────────────────────────────
 
   if (status === "no_geolocation") {
     return (
@@ -675,7 +629,7 @@ function renderContent(p: ContentProps) {
     );
   }
 
-  // ── Geo timeout ───────────────────────────────────────────────────────────
+  // ── Geo timeout ────────────────────────────────────────────────────────────
 
   if (status === "geo_timeout") {
     return (
@@ -688,7 +642,7 @@ function renderContent(p: ContentProps) {
     );
   }
 
-  // ── Out of scope ──────────────────────────────────────────────────────────
+  // ── Out of scope ───────────────────────────────────────────────────────────
 
   if (status === "out_of_scope") {
     return (
@@ -702,7 +656,7 @@ function renderContent(p: ContentProps) {
     );
   }
 
-  // ── Catchall error ────────────────────────────────────────────────────────
+  // ── Catchall error ─────────────────────────────────────────────────────────
 
   return (
     <div className="info-block">
