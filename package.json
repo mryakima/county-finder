@@ -1,0 +1,38 @@
+{
+  "name": "county-finder",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "data:download": "tsx scripts/download-data.ts",
+    "icons:generate": "tsx scripts/generate-icons.ts",
+    "setup": "npm run data:download && npm run icons:generate",
+    "verify": "tsx scripts/verify-lookup.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "next": "^15.3.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@turf/boolean-point-in-polygon": "^7.2.0",
+    "rbush": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/geojson": "^7946.0.14",
+    "@types/rbush": "^4.0.0",
+    "@types/unzipper": "^0.10.10",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0",
+
+    "tsx": "^4.19.0",
+    "shapefile": "^0.6.6",
+    "unzipper": "^0.12.3",
+    "sharp": "^0.33.0"
+  }
+}
