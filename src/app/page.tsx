@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import type { AppStatus, LookupSuccess, CachedResult, PositionSnapshot } from "@/lib/types";
-import { saveCache, loadCache, pointInGeometry, isOnline } from "@/lib/offline";
+import { saveCache, loadCache, pointInGeometry, isOnline as checkOnline } from "@/lib/offline";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -113,6 +113,34 @@ function CopyButton({ label, text, variant = "secondary" }: {
   return <button className={`btn btn-${variant}`} onClick={copy}>{copied ? "✓ Copied" : label}</button>;
 }
 
+// ── Staleness ────────────────────────────────────────────────────────────────
+
+type StalenessLevel = "fresh" | "amber" | "red";
+
+function formatStaleness(ts: number, now: number): { text: string; level: StalenessLevel; message: string } {
+  const ms = now - ts;
+  const mins = Math.floor(ms / 60000);
+  const hrs = Math.floor(ms / 3600000);
+
+  const text =
+    mins < 1  ? "Just now" :
+    mins < 60 ? `${mins} min ago` :
+    hrs === 1  ? "1 hr ago" :
+                 `${hrs} hr ago`;
+
+  const level: StalenessLevel =
+    ms > 7_200_000  ? "red" :   // > 2 hours
+    ms > 1_800_000  ? "amber" : // > 30 minutes
+    "fresh";
+
+  const message =
+    level === "red"   ? "Location data is likely incorrect — you may have crossed county lines." :
+    level === "amber" ? "Data may be outdated — county may have changed." :
+    "Last known county shown.";
+
+  return { text, level, message };
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const LIVE_MIN_INTERVAL_MS = 3000; // min ms between background lookups
@@ -129,6 +157,8 @@ export default function HomePage() {
   const [coordFormat, setCoordFormat] = useState<CoordFormat>("decimal");
   const [countyChangedAlert, setCountyChangedAlert] = useState<string | null>(null);
   const [cardFlash, setCardFlash] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [now, setNow] = useState(Date.now());
 
   const abortRef = useRef<AbortController | null>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -139,6 +169,21 @@ export default function HomePage() {
   useEffect(() => {
     const stored = localStorage.getItem("county-finder:coord-format") as CoordFormat | null;
     if (stored === "dms") setCoordFormat("dms");
+  }, []);
+
+  // Online/offline detection + staleness clock (ticks every 30 s)
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+    const handleOnline  = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online",  handleOnline);
+    window.addEventListener("offline", handleOffline);
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => {
+      window.removeEventListener("online",  handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      clearInterval(timer);
+    };
   }, []);
 
   const toggleCoordFormat = () => {
@@ -246,7 +291,7 @@ export default function HomePage() {
         if (!isFirstFix && now - lastLookupMsRef.current < LIVE_MIN_INTERVAL_MS) return;
         lastLookupMsRef.current = now;
 
-        if (!isOnline()) {
+        if (!checkOnline()) {
           const c = loadCache();
           if (c) {
             setCached(c); setPosition(snap);
@@ -292,7 +337,7 @@ export default function HomePage() {
     const c = loadCache();
     if (c) setCached(c);
 
-    if (!isOnline()) {
+    if (!checkOnline()) {
       if (c && navigator.geolocation) {
         setStatus("locating");
         navigator.geolocation.getCurrentPosition(
@@ -342,11 +387,18 @@ export default function HomePage() {
           <path d="M16 23 L16 30" stroke="var(--color-primary)" strokeWidth="2.5" strokeLinecap="round" />
         </svg>
         <h1>Current County <span style={{ fontWeight: 400, color: "var(--color-text-muted)", fontSize: "var(--font-size-base)" }}>— Where am I?</span></h1>
+        {!isOnline && (
+          <div className="connectivity-offline" aria-label="No network connection">
+            <div className="connectivity-offline-dot" />
+            Offline
+          </div>
+        )}
       </header>
 
       <main className="app-main">
         {renderContent({
           status, position, result, cached, errorMessage, coordFormat, cardFlash,
+          isOnline, now,
           onRefresh: handleRefresh,
           onShare: handleShare,
           onToggleCoordFormat: toggleCoordFormat,
@@ -372,13 +424,15 @@ interface ContentProps {
   errorMessage: string | null;
   coordFormat: CoordFormat;
   cardFlash: boolean;
+  isOnline: boolean;
+  now: number;
   onRefresh: () => void;
   onShare: () => void;
   onToggleCoordFormat: () => void;
 }
 
 function renderContent(p: ContentProps) {
-  const { status, position, result, cached, errorMessage, coordFormat, cardFlash } = p;
+  const { status, position, result, cached, errorMessage, coordFormat, cardFlash, now } = p;
 
   // ── Locating / looking up ──────────────────────────────────────────────────
 
@@ -544,6 +598,7 @@ function renderContent(p: ContentProps) {
 
   if (status === "offline_verified" && cached) {
     const pos = position;
+    const stale = formatStaleness(new Date(cached.result.lookupTimestamp).getTime(), now);
     return (
       <div className="status-card">
         <div className="status-badge offline-verified">✓ Offline — verified locally</div>
@@ -551,16 +606,16 @@ function renderContent(p: ContentProps) {
           <div className="county-name">{cached.result.countyName}</div>
           <div className="state-name">{cached.result.stateName}</div>
         </div>
-        <p style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", marginBottom: "var(--spacing-3)" }}>
-          Offline — verified inside cached county boundary. Connect to the internet for a fresh lookup.
-        </p>
+        <div className={`staleness-banner ${stale.level}`}>
+          <span>Last verified {stale.text}</span>
+          {stale.level !== "fresh" && <div className="staleness-message">{stale.message}</div>}
+        </div>
         <div className="details-list">
           {pos && <>
             <div className="detail-row"><span className="detail-label">Accuracy</span><span className="detail-value">{formatAccuracy(pos.accuracy)}</span></div>
             <div className="detail-row"><span className="detail-label">Latitude</span><span className="detail-value">{fmtLat(pos.lat, coordFormat)}</span></div>
             <div className="detail-row"><span className="detail-label">Longitude</span><span className="detail-value">{fmtLon(pos.lon, coordFormat)}</span></div>
           </>}
-          <div className="detail-row"><span className="detail-label">Last lookup</span><span className="detail-value">{formatIso(cached.result.lookupTimestamp)}</span></div>
         </div>
         <div className="btn-group">
           <button className="btn btn-primary" onClick={p.onRefresh}>↻ Try again</button>
@@ -574,6 +629,7 @@ function renderContent(p: ContentProps) {
 
   if ((status === "offline_unverified" || status === "offline_no_position") && cached) {
     const pos = position;
+    const stale = formatStaleness(new Date(cached.result.lookupTimestamp).getTime(), now);
     return (
       <div className="status-card">
         <div className="status-badge offline-unverified">⚠ Offline — not verified</div>
@@ -582,13 +638,17 @@ function renderContent(p: ContentProps) {
           <div className="state-name">{cached.result.stateName}</div>
           <div className="unverified-label">Last known — not verified</div>
         </div>
-        <p style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", marginBottom: "var(--spacing-3)" }}>
-          {status === "offline_no_position"
-            ? "Could not get your current location while offline."
-            : "Current location appears to be outside the cached county boundary."}
-        </p>
+        <div className={`staleness-banner ${stale.level}`}>
+          <span>Last verified {stale.text}</span>
+          <div className="staleness-message">
+            {stale.level !== "fresh"
+              ? stale.message
+              : status === "offline_no_position"
+                ? "Could not get current location while offline."
+                : "Current location appears to be outside the cached county boundary."}
+          </div>
+        </div>
         <div className="details-list">
-          <div className="detail-row"><span className="detail-label">Last lookup</span><span className="detail-value">{formatIso(cached.result.lookupTimestamp)}</span></div>
           {pos && <>
             <div className="detail-row"><span className="detail-label">Current lat</span><span className="detail-value">{fmtLat(pos.lat, coordFormat)}</span></div>
             <div className="detail-row"><span className="detail-label">Current lon</span><span className="detail-value">{fmtLon(pos.lon, coordFormat)}</span></div>
