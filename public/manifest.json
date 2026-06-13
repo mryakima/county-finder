@@ -1,5 +1,5 @@
 {
-  "name": "County Finder",
+  "name": "Current County",
   "short_name": "County",
   "description": "Find the U.S. county you're currently in.",
   "start_url": "/",

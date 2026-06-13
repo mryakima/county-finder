@@ -459,3 +459,225 @@ body {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* ── Live mode ──────────────────────────────────────────────────────────────── */
+
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: live-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.7); }
+}
+
+.btn-live {
+  background: #ef4444;
+  color: white;
+}
+
+.btn-live:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+/* ── County-change toast ────────────────────────────────────────────────────── */
+
+.county-toast {
+  position: fixed;
+  top: var(--spacing-4);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-success);
+  color: white;
+  padding: var(--spacing-3) var(--spacing-5);
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  white-space: nowrap;
+  z-index: 9999;
+  box-shadow: var(--shadow-md);
+  animation: toast-in 0.25s ease-out;
+  pointer-events: none;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── County-change flash on card ────────────────────────────────────────────── */
+
+@keyframes county-flash {
+  0%, 100% { box-shadow: var(--shadow-md); }
+  30%      { box-shadow: 0 0 0 4px var(--color-success); }
+  70%      { box-shadow: 0 0 0 4px var(--color-success); }
+}
+
+.county-flash {
+  animation: county-flash 0.9s ease-in-out;
+}
+
+/* ── Dual-county banner ─────────────────────────────────────────────────────── */
+
+.dual-county {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0;
+  margin-bottom: var(--spacing-4);
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 2px solid var(--color-error);
+}
+
+.dual-county-side {
+  padding: var(--spacing-3) var(--spacing-3);
+  text-align: center;
+}
+
+.dual-county-side.current {
+  background: var(--color-error-bg);
+}
+
+.dual-county-side.adjacent {
+  background: var(--color-surface);
+}
+
+.dual-county-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--spacing-1);
+}
+
+.dual-county-name {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.dual-county-name.current {
+  color: var(--color-error);
+}
+
+.dual-county-name.adjacent {
+  color: var(--color-text-muted);
+}
+
+.dual-county-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--spacing-2);
+  position: relative;
+}
+
+.dual-county-divider::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: var(--color-error);
+  transform: translateX(-50%);
+}
+
+.dual-county-dist {
+  background: var(--color-error);
+  color: white;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  padding: 2px var(--spacing-2);
+  border-radius: 999px;
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+.dual-county-dir {
+  font-size: var(--font-size-xs);
+  color: var(--color-error);
+  font-weight: 600;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── eBird section ──────────────────────────────────────────────────────────── */
+
+.ebird-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-4);
+  background: #f0fdf4;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-3);
+  border: 1px solid #86efac;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ebird-row {
+    background: #14532d;
+    border-color: #166534;
+  }
+}
+
+.ebird-code {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: #16a34a;
+  letter-spacing: 0.04em;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ebird-code { color: #4ade80; }
+}
+
+.btn-ebird {
+  background: #16a34a;
+  color: white;
+  font-size: var(--font-size-xs);
+  padding: var(--spacing-1) var(--spacing-3);
+  min-height: 32px;
+}
+
+.btn-ebird:hover:not(:disabled) {
+  background: #15803d;
+}
+
+/* ── Coord-format toggle ────────────────────────────────────────────────────── */
+
+.coord-toggle {
+  font-size: var(--font-size-xs);
+  padding: 2px var(--spacing-2);
+  min-height: 24px;
+  border-radius: var(--radius-sm);
+  background: var(--color-border);
+  color: var(--color-text-muted);
+  border: none;
+  cursor: pointer;
+}
+
+.coord-toggle:hover {
+  background: var(--color-text-muted);
+  color: white;
+}
+
+/* ── Button row (2-up) ──────────────────────────────────────────────────────── */
+
+.btn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-2);
+}

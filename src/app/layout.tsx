@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "County Finder",
+  title: "Current County",
   description: "Find the U.S. county or county-equivalent you're currently in.",
   manifest: "/manifest.json",
   appleWebApp: {

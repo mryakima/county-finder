@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Privacy — County Finder",
+  title: "Privacy — Current County",
 };
 
 export default function PrivacyPage() {
@@ -13,7 +13,7 @@ export default function PrivacyPage() {
       <h1>Privacy Policy</h1>
 
       <p>
-        <strong>County Finder</strong> is designed with privacy as a first
+        <strong>Current County</strong> is designed with privacy as a first
         priority. Here is exactly how it works.
       </p>
 
