@@ -341,7 +341,7 @@ export default function HomePage() {
           <circle cx="16" cy="14" r="4" fill="white" />
           <path d="M16 23 L16 30" stroke="var(--color-primary)" strokeWidth="2.5" strokeLinecap="round" />
         </svg>
-        <h1>Current County</h1>
+        <h1>Current County <span style={{ fontWeight: 400, color: "var(--color-text-muted)", fontSize: "var(--font-size-base)" }}>— Where am I?</span></h1>
       </header>
 
       <main className="app-main">
