@@ -276,7 +276,7 @@ body {
   color: var(--color-text);
   text-align: right;
   font-variant-numeric: tabular-nums;
-  word-break: break-all;
+  overflow-wrap: break-word;
   font-weight: 500;
 }
 
