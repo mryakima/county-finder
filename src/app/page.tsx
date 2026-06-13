@@ -64,7 +64,7 @@ function formatIso(iso: string): string { return formatTimestamp(new Date(iso).g
 // ── eBird utilities ───────────────────────────────────────────────────────────
 
 function eBirdUrl(stateAbbr: string, geoid: string): string {
-  return `https://ebird.org/region/US-${stateAbbr}-${geoid.slice(2)}/recent`;
+  return `https://ebird.org/region/US-${stateAbbr}-${geoid.slice(2)}`;
 }
 
 // ── Share / copy ──────────────────────────────────────────────────────────────
@@ -74,10 +74,7 @@ function coordsCopyText(lat: number, lon: number): string {
 }
 
 function buildShareText(result: LookupSuccess, position: PositionSnapshot | null): string {
-  const lines = [
-    `${result.countyName}, ${result.stateName}`,
-    `eBird: US-${result.stateAbbr}-${result.geoid.slice(2)}`,
-  ];
+  const lines = [`${result.countyName}, ${result.stateName}`];
   if (position) lines.push(`${fmt6(position.lat)}, ${fmt6(position.lon)} (${formatAccuracy(position.accuracy)})`);
   lines.push("https://countyfinder.chasereport.com");
   return lines.join("\n");
@@ -473,8 +470,7 @@ function renderContent(p: ContentProps) {
 
         {/* eBird link */}
         <div className="ebird-row">
-          <span style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>Recent sightings</span>
-          <a className="btn btn-ebird" href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer">
+          <a className="btn btn-ebird" style={{ width: "100%", justifyContent: "center" }} href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer">
             eBird →
           </a>
         </div>
