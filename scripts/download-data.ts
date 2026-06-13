@@ -26,7 +26,7 @@ import type { CountyRecord, ProcessedDataFile } from "../src/lib/types";
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 const DATASET_YEAR = "2024";
-const DATASET_SCALE = "20m";
+const DATASET_SCALE = "500k";
 const SHAPEFILE_URL =
   `https://www2.census.gov/geo/tiger/GENZ${DATASET_YEAR}/shp/cb_${DATASET_YEAR}_us_county_${DATASET_SCALE}.zip`;
 
