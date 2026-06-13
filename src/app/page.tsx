@@ -467,29 +467,41 @@ function renderContent(state: AppState, onRefresh: () => void) {
 
           {/* County line distance — prominent for birders */}
           <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
             background: "var(--color-bg)",
             borderRadius: "var(--radius-md)",
             padding: "var(--spacing-3) var(--spacing-4)",
             marginBottom: "var(--spacing-3)",
             border: `2px solid ${boundaryDistanceColor(result.distanceToBoundaryM)}`,
           }}>
-            <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>
-              County line
-            </span>
-            <span style={{
-              fontWeight: 700,
-              fontSize: "var(--font-size-xl)",
-              color: boundaryDistanceColor(result.distanceToBoundaryM),
-              fontVariantNumeric: "tabular-nums",
-            }}>
-              {formatBoundaryDistance(result.distanceToBoundaryM)}{" "}
-              <span style={{ fontSize: "var(--font-size-base)", opacity: 0.8 }}>
-                {bearingToCardinal(result.bearingToBoundary)}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>
+                County line
               </span>
-            </span>
+              <span style={{
+                fontWeight: 700,
+                fontSize: "var(--font-size-xl)",
+                color: boundaryDistanceColor(result.distanceToBoundaryM),
+                fontVariantNumeric: "tabular-nums",
+              }}>
+                {formatBoundaryDistance(result.distanceToBoundaryM)}{" "}
+                <span style={{ fontSize: "var(--font-size-base)", opacity: 0.8 }}>
+                  {bearingToCardinal(result.bearingToBoundary)}
+                </span>
+              </span>
+            </div>
+            {result.adjacentCountyName && (
+              <div style={{
+                marginTop: "var(--spacing-1)",
+                fontSize: "var(--font-size-xs)",
+                color: "var(--color-text-muted)",
+                textAlign: "right",
+              }}>
+                → {result.adjacentCountyName}
+                {result.adjacentCountyState && result.adjacentCountyState !== result.stateAbbr
+                  ? `, ${result.adjacentCountyState}`
+                  : ""}
+              </div>
+            )}
           </div>
 
           <div className="details-list">

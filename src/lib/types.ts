@@ -64,6 +64,10 @@ export interface LookupSuccess {
   distanceToBoundaryM: number;
   /** Bearing in degrees (0–360, clockwise from north) toward the nearest boundary point. */
   bearingToBoundary: number;
+  /** Name of the county on the other side of the nearest boundary, if determinable. */
+  adjacentCountyName: string | null;
+  /** State abbreviation of the adjacent county. */
+  adjacentCountyState: string | null;
   /**
    * County geometry included in the API response so the client can cache it
    * for offline verification. Clients should save this, then strip it from

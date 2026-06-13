@@ -87,6 +87,30 @@ function getData(): LoadedData | null {
 // ── Lookup ────────────────────────────────────────────────────────────────────
 
 /**
+ * Internal: find the CountyRecord for a lat/lon without computing derived fields.
+ * Does NOT call adjacentCountyLookup — use this to avoid recursion.
+ */
+function findCountyRecord(lat: number, lon: number): CountyRecord | null {
+  const data = getData();
+  if (!data) return null;
+
+  const candidates = data.tree.search({ minX: lon, minY: lat, maxX: lon, maxY: lat });
+  const turfPoint = {
+    type: "Feature" as const,
+    properties: {},
+    geometry: { type: "Point" as const, coordinates: [lon, lat] },
+  };
+
+  for (const item of candidates) {
+    const feature: Feature<Polygon | MultiPolygon> = {
+      type: "Feature", properties: {}, geometry: item.county.geometry,
+    };
+    if (booleanPointInPolygon(turfPoint, feature)) return item.county;
+  }
+  return null;
+}
+
+/**
  * Look up the county/state for a given lat/lon pair.
  *
  * @param lat - Latitude (browser convention, degrees north)
@@ -106,16 +130,9 @@ export function lookupCounty(
     };
   }
 
-  // Spatial pre-filter: find candidate counties whose bounding box contains the point.
-  // rbush X = longitude, Y = latitude
-  const candidates = data.tree.search({
-    minX: lon,
-    minY: lat,
-    maxX: lon,
-    maxY: lat,
-  });
-
-  if (candidates.length === 0) {
+  // Quick bounding-box pre-filter before PIP
+  const bboxCandidates = data.tree.search({ minX: lon, minY: lat, maxX: lon, maxY: lat });
+  if (bboxCandidates.length === 0) {
     return {
       ok: false,
       errorCode: "OUT_OF_SCOPE",
@@ -123,58 +140,39 @@ export function lookupCounty(
     };
   }
 
-  // Exact point-in-polygon check against each candidate.
-  // GeoJSON point expects [longitude, latitude] — NOT [latitude, longitude].
-  const turfPoint = {
-    type: "Feature" as const,
-    properties: {},
-    geometry: {
-      type: "Point" as const,
-      // ⚠ GeoJSON order: [longitude, latitude]
-      coordinates: [lon, lat],
-    },
-  };
+  const county = findCountyRecord(lat, lon);
 
-  for (const item of candidates) {
-    const feature: Feature<Polygon | MultiPolygon> = {
-      type: "Feature",
-      properties: {},
-      geometry: item.county.geometry,
+  if (!county) {
+    // Had bbox candidates but no PIP match — coastal or boundary edge case
+    return {
+      ok: false,
+      errorCode: "NO_MATCH",
+      message: "Could not match coordinates to a county. The point may be near a boundary, coastline, or outside the mapped area.",
     };
-
-    if (booleanPointInPolygon(turfPoint, feature)) {
-      const county = item.county;
-      return {
-        ok: true,
-        stateName: county.stateName,
-        stateAbbr: county.stateAbbr,
-        countyName: county.nameLsad,
-        countyBaseName: county.name,
-        geoid: county.geoid,
-        // Include geometry so client can cache it for offline PIP verification.
-        geometry: county.geometry,
-        // Distance and bearing to the nearest county boundary.
-        ...(() => {
-          const { distanceM, bearing } = distanceToBoundary(lat, lon, county.geometry);
-          return { distanceToBoundaryM: distanceM, bearingToBoundary: bearing };
-        })(),
-        lat,
-        lon,
-        lookupTimestamp: new Date().toISOString(),
-        dataset: `U.S. Census TIGER ${data.meta.datasetYear} cartographic boundary / 1:${data.meta.datasetScale}`,
-        matchMethod: "point-in-polygon",
-        boundaryWarning: false,
-      };
-    }
   }
 
-  // Point was within a bounding box but not inside any actual polygon.
-  // This can happen for coastal/border points.
+  // Compute distance/bearing to nearest boundary, and find the adjacent county.
+  const { distanceM, bearing, nearLat, nearLon } = distanceToBoundary(lat, lon, county.geometry);
+  const adj = adjacentCountyLookup(nearLat, nearLon, bearing, county.geoid);
+
   return {
-    ok: false,
-    errorCode: "NO_MATCH",
-    message:
-      "Could not match coordinates to a county. The point may be near a boundary, coastline, or outside the mapped area.",
+    ok: true,
+    stateName: county.stateName,
+    stateAbbr: county.stateAbbr,
+    countyName: county.nameLsad,
+    countyBaseName: county.name,
+    geoid: county.geoid,
+    geometry: county.geometry,
+    distanceToBoundaryM: distanceM,
+    bearingToBoundary: bearing,
+    adjacentCountyName: adj?.name ?? null,
+    adjacentCountyState: adj?.stateAbbr ?? null,
+    lat,
+    lon,
+    lookupTimestamp: new Date().toISOString(),
+    dataset: `U.S. Census TIGER ${data.meta.datasetYear} cartographic boundary / 1:${data.meta.datasetScale}`,
+    matchMethod: "point-in-polygon",
+    boundaryWarning: false,
   };
 }
 
@@ -254,11 +252,36 @@ function nearestOnRing(
  * Checks all rings (exterior + holes, all polygons of a MultiPolygon)
  * so enclaves are handled correctly.
  */
+/**
+ * Compute a destination point given origin, bearing (degrees), and distance (meters).
+ * Uses the spherical law of cosines (accurate for county-scale distances).
+ */
+function destinationPoint(
+  lat: number,
+  lon: number,
+  bearingDeg: number,
+  distanceM: number
+): { lat: number; lon: number } {
+  const R = 6371000;
+  const δ = distanceM / R;
+  const θ = (bearingDeg * Math.PI) / 180;
+  const φ1 = (lat * Math.PI) / 180;
+  const λ1 = (lon * Math.PI) / 180;
+  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ));
+  const λ2 =
+    λ1 +
+    Math.atan2(
+      Math.sin(θ) * Math.sin(δ) * Math.cos(φ1),
+      Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2)
+    );
+  return { lat: (φ2 * 180) / Math.PI, lon: (λ2 * 180) / Math.PI };
+}
+
 export function distanceToBoundary(
   lat: number,
   lon: number,
   geometry: Polygon | MultiPolygon
-): { distanceM: number; bearing: number } {
+): { distanceM: number; bearing: number; nearLat: number; nearLon: number } {
   let minDist = Infinity;
   let bestLat = lat;
   let bestLon = lon;
@@ -280,7 +303,30 @@ export function distanceToBoundary(
   return {
     distanceM: minDist,
     bearing: bearingDeg(lat, lon, bestLat, bestLon),
+    nearLat: bestLat,
+    nearLon: bestLon,
   };
+}
+
+/**
+ * Look up the county on the other side of the nearest boundary.
+ * Steps 200 m past the boundary point in the same direction.
+ * Returns null if the adjacent area is water or outside scope.
+ */
+export function adjacentCountyLookup(
+  nearLat: number,
+  nearLon: number,
+  bearing: number,
+  currentGeoid: string
+): { name: string; stateAbbr: string } | null {
+  // Step 200 m beyond the boundary point.
+  // Uses findCountyRecord (not lookupCounty) to avoid infinite recursion.
+  const beyond = destinationPoint(nearLat, nearLon, bearing, 200);
+  const county = findCountyRecord(beyond.lat, beyond.lon);
+
+  if (!county) return null;
+  if (county.geoid === currentGeoid) return null; // guard: still same county
+  return { name: county.nameLsad, stateAbbr: county.stateAbbr };
 }
 
 /** Return dataset metadata for use in diagnostics. */
