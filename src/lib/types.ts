@@ -64,6 +64,10 @@ export interface LookupSuccess {
   distanceToBoundaryM: number;
   /** Bearing in degrees (0–360, clockwise from north) toward the nearest boundary point. */
   bearingToBoundary: number;
+  /** Latitude of the nearest point on the county boundary (for map rendering). */
+  nearestBoundaryLat: number;
+  /** Longitude of the nearest point on the county boundary (for map rendering). */
+  nearestBoundaryLon: number;
   /** Name of the county on the other side of the nearest boundary, if determinable. */
   adjacentCountyName: string | null;
   /** State abbreviation of the adjacent county. */
@@ -132,4 +136,9 @@ export interface PositionSnapshot {
   /** Altitude in meters above WGS84 ellipsoid. Null if device doesn't provide it. */
   altitude: number | null;
   altitudeAccuracy: number | null;
+  /**
+   * Direction of travel in degrees (0–360, clockwise from north).
+   * Null when stationary or when the device doesn't provide it.
+   */
+  heading: number | null;
 }

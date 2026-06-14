@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import type { AppStatus, LookupSuccess, CachedResult, PositionSnapshot } from "@/lib/types";
 import { saveCache, loadCache, pointInGeometry, isOnline as checkOnline } from "@/lib/offline";
+
+const CountyMap = dynamic(() => import("@/components/CountyMap"), { ssr: false });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -159,6 +162,7 @@ export default function HomePage() {
   const [cardFlash, setCardFlash] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [now, setNow] = useState(Date.now());
+  const [showMap, setShowMap] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -283,6 +287,9 @@ export default function HomePage() {
           accuracy: pos.coords.accuracy, timestamp: pos.timestamp,
           altitude: pos.coords.altitude,
           altitudeAccuracy: pos.coords.altitudeAccuracy,
+          heading: typeof pos.coords.heading === "number" && isFinite(pos.coords.heading)
+            ? pos.coords.heading
+            : null,
         };
 
         const isFirstFix = lastLookupMsRef.current === 0;
@@ -342,7 +349,7 @@ export default function HomePage() {
         setStatus("locating");
         navigator.geolocation.getCurrentPosition(
           (pos) => {
-            const snap = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy, timestamp: pos.timestamp, altitude: pos.coords.altitude, altitudeAccuracy: pos.coords.altitudeAccuracy };
+            const snap = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy, timestamp: pos.timestamp, altitude: pos.coords.altitude, altitudeAccuracy: pos.coords.altitudeAccuracy, heading: null };
             setCached(c); setPosition(snap);
             setStatus(pointInGeometry(snap.lat, snap.lon, c.geometry) ? "offline_verified" : "offline_unverified");
           },
@@ -373,6 +380,13 @@ export default function HomePage() {
 
   const handleRefresh = () => { abortRef.current?.abort(); startTracking(); };
 
+  const handleOpenMap = useCallback(() => {
+    // Ensure cached state is populated (geometry lives in localStorage via saveCache)
+    const c = loadCache();
+    if (c) setCached(c);
+    setShowMap(true);
+  }, []);
+
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="app-shell">
@@ -402,6 +416,7 @@ export default function HomePage() {
           onRefresh: handleRefresh,
           onShare: handleShare,
           onToggleCoordFormat: toggleCoordFormat,
+          onOpenMap: handleOpenMap,
         })}
       </main>
 
@@ -410,6 +425,74 @@ export default function HomePage() {
         {" · "}
         Location is used only to find your county. Not stored.
       </footer>
+
+      {/* ── County map modal ───────────────────────────────────────────────── */}
+      {showMap && result && position && cached && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 200,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex", flexDirection: "column",
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowMap(false); }}
+        >
+          <div style={{
+            position: "relative", flex: 1,
+            display: "flex", flexDirection: "column",
+            margin: "env(safe-area-inset-top, 0) 0 0",
+          }}>
+            {/* Header bar */}
+            <div style={{
+              background: "#4a7c3f", color: "#fff",
+              padding: "12px 16px",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              flexShrink: 0,
+            }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{result.countyName}</div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>
+                  {formatBoundaryDistance(result.distanceToBoundaryM)}{" "}
+                  {bearingToCardinal(result.bearingToBoundary)} to county line
+                  {result.adjacentCountyName ? ` · → ${result.adjacentCountyName}` : ""}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowMap(false)}
+                aria-label="Close map"
+                style={{
+                  background: "rgba(255,255,255,0.2)", border: "none",
+                  borderRadius: 6, color: "#fff",
+                  width: 36, height: 36, fontSize: 20,
+                  cursor: "pointer", display: "flex",
+                  alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Map fills remaining space */}
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <CountyMap
+                userLat={position.lat}
+                userLon={position.lon}
+                accuracy={position.accuracy}
+                heading={position.heading}
+                nearestBoundaryLat={result.nearestBoundaryLat}
+                nearestBoundaryLon={result.nearestBoundaryLon}
+                distanceToBoundaryM={result.distanceToBoundaryM}
+                currentCountyGeoid={result.geoid}
+                currentCountyName={result.countyName}
+                currentCountyGeometry={cached.geometry}
+                adjacentCountyName={result.adjacentCountyName}
+                adjacentCountyState={result.adjacentCountyState}
+                onClose={() => setShowMap(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -429,6 +512,7 @@ interface ContentProps {
   onRefresh: () => void;
   onShare: () => void;
   onToggleCoordFormat: () => void;
+  onOpenMap: () => void;
 }
 
 function renderContent(p: ContentProps) {
@@ -578,6 +662,7 @@ function renderContent(p: ContentProps) {
         <div className="btn-group">
           <button className="btn btn-primary" onClick={p.onRefresh}>↻ Refresh</button>
           <button className="btn btn-ghost" onClick={p.onShare}>⬆ Share</button>
+          <button className="btn btn-ghost" onClick={p.onOpenMap}>🗺️ Map</button>
           <div className="btn-row">
             <CopyButton label="Copy coords" text={coordsCopyText(position.lat, position.lon)} variant="secondary" />
             <CopyButton label="Copy result" text={buildFullCopyText(result, position)} variant="secondary" />

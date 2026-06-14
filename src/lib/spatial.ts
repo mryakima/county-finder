@@ -165,6 +165,8 @@ export function lookupCounty(
     geometry: county.geometry,
     distanceToBoundaryM: distanceM,
     bearingToBoundary: bearing,
+    nearestBoundaryLat: nearLat,
+    nearestBoundaryLon: nearLon,
     adjacentCountyName: adj?.name ?? null,
     adjacentCountyState: adj?.stateAbbr ?? null,
     lat,
@@ -327,6 +329,27 @@ export function adjacentCountyLookup(
   if (!county) return null;
   if (county.geoid === currentGeoid) return null; // guard: still same county
   return { name: county.nameLsad, stateAbbr: county.stateAbbr };
+}
+
+/**
+ * Return all county records whose bounding boxes overlap a box of `degreePad`
+ * degrees around (lat, lon). Used to fetch a county grid for map rendering.
+ * Returns an empty array if data is not loaded.
+ */
+export function getNearbyCounties(
+  lat: number,
+  lon: number,
+  degreePad: number = 1.5
+): CountyRecord[] {
+  const data = getData();
+  if (!data) return [];
+  const results = data.tree.search({
+    minX: lon - degreePad,
+    minY: lat - degreePad,
+    maxX: lon + degreePad,
+    maxY: lat + degreePad,
+  });
+  return results.map((r) => r.county);
 }
 
 /** Return dataset metadata for use in diagnostics. */
