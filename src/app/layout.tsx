@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import UpdateBanner from "@/components/UpdateBanner";
 
 export const metadata: Metadata = {
   title: "Current County",
@@ -43,6 +44,7 @@ export default function RootLayout({
       <body>
         <ServiceWorkerRegistration />
         {children}
+        <UpdateBanner />
       </body>
     </html>
   );

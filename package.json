@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node -e \"require('fs').writeFileSync('public/version.json', JSON.stringify({v: Date.now()}))\"",
     "build": "next build",
     "start": "next start",
     "data:download": "tsx scripts/download-data.ts",
