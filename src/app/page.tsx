@@ -421,6 +421,15 @@ export default function HomePage() {
       </main>
 
       <footer className="app-footer">
+        {result && (
+          <button
+            className="btn btn-secondary"
+            style={{ marginBottom: "var(--spacing-3)", width: "100%" }}
+            onClick={handleShare}
+          >
+            ⬆ Share
+          </button>
+        )}
         <Link href="/privacy">Privacy</Link>
         {" · "}
         Location is used only to find your county. Not stored.
