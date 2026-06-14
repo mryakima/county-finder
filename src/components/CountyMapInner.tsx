@@ -48,6 +48,16 @@ export interface CountyMapProps {
   onClose: () => void;
 }
 
+// ── Distance formatting (mirrors page.tsx) ──────────────────────────────────
+
+function formatBoundaryDistance(m: number): string {
+  const ft = m * 3.28084;
+  const mi = m / 1609.344;
+  if (ft < 528) return `${Math.round(ft)} ft`;
+  if (mi < 10)  return `${mi.toFixed(1)} mi`;
+  return `${Math.round(mi)} mi`;
+}
+
 // ── Distance-based color (matches main UI) ────────────────────────────────────
 
 function boundaryColor(m: number): string {
@@ -167,6 +177,28 @@ export default function CountyMapInner(props: CountyMapProps) {
           ],
           { color: lineColor, weight: 2.5, dashArray: "7 5", opacity: 0.85 }
         ).addTo(leafletMap);
+
+        // Distance label — positioned at midpoint of the dashed line
+        const midLat = (props.userLat + props.nearestBoundaryLat) / 2;
+        const midLon = (props.userLon + props.nearestBoundaryLon) / 2;
+        const distLabel = formatBoundaryDistance(props.distanceToBoundaryM);
+
+        L.marker([midLat, midLon], {
+          icon: L.divIcon({
+            html: `<span style="
+              background:${lineColor};color:#fff;
+              font-size:11px;font-weight:700;
+              padding:2px 7px;border-radius:10px;
+              white-space:nowrap;pointer-events:none;
+              box-shadow:0 1px 4px rgba(0,0,0,.35);
+              letter-spacing:0.01em;
+            ">${distLabel}</span>`,
+            className: "",
+            iconAnchor: undefined,
+          }),
+          interactive: false,
+          zIndexOffset: 200,
+        }).addTo(leafletMap);
 
         // Boundary point marker
         L.circleMarker([props.nearestBoundaryLat, props.nearestBoundaryLon], {
