@@ -479,72 +479,78 @@ export default function HomePage() {
       </footer>
 
       {/* ── County map modal ───────────────────────────────────────────────── */}
-      {showMap && result && position && cached && (
-        <div
-          style={{
-            position: "fixed", inset: 0, zIndex: 200,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex", flexDirection: "column",
-          }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowMap(false); }}
-        >
-          <div style={{
-            position: "relative", flex: 1,
-            display: "flex", flexDirection: "column",
-            margin: "env(safe-area-inset-top, 0) 0 0",
-          }}>
-            {/* Header bar */}
+      {showMap && position && cached && (() => {
+        // Use live result when online, fall back to cached result when offline
+        const mapResult = result ?? cached.result;
+        const isOfflineMap = !result;
+        return (
+          <div
+            style={{
+              position: "fixed", inset: 0, zIndex: 200,
+              background: "rgba(0,0,0,0.6)",
+              display: "flex", flexDirection: "column",
+            }}
+            onClick={(e) => { if (e.target === e.currentTarget) setShowMap(false); }}
+          >
             <div style={{
-              background: "#4a7c3f", color: "#fff",
-              padding: "12px 16px",
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              flexShrink: 0,
+              position: "relative", flex: 1,
+              display: "flex", flexDirection: "column",
+              margin: "env(safe-area-inset-top, 0) 0 0",
             }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>{result.countyName}</div>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>
-                  {formatBoundaryDistance(result.distanceToBoundaryM)}{" "}
-                  {bearingToCardinal(result.bearingToBoundary)} to county line
-                  {result.adjacentCountyName ? ` · → ${result.adjacentCountyName}` : ""}
+              {/* Header bar */}
+              <div style={{
+                background: "#4a7c3f", color: "#fff",
+                padding: "12px 16px",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                flexShrink: 0,
+              }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>{mapResult.countyName}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    {isOfflineMap
+                      ? "Offline — boundary distance unavailable"
+                      : `${formatBoundaryDistance(result!.distanceToBoundaryM)} ${bearingToCardinal(result!.bearingToBoundary)} to county line${result!.adjacentCountyName ? ` · → ${result!.adjacentCountyName}` : ""}`
+                    }
+                  </div>
                 </div>
+                <button
+                  onClick={() => setShowMap(false)}
+                  aria-label="Close map"
+                  style={{
+                    background: "rgba(255,255,255,0.2)", border: "none",
+                    borderRadius: 6, color: "#fff",
+                    width: 36, height: 36, fontSize: 20,
+                    cursor: "pointer", display: "flex",
+                    alignItems: "center", justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  ×
+                </button>
               </div>
-              <button
-                onClick={() => setShowMap(false)}
-                aria-label="Close map"
-                style={{
-                  background: "rgba(255,255,255,0.2)", border: "none",
-                  borderRadius: 6, color: "#fff",
-                  width: 36, height: 36, fontSize: 20,
-                  cursor: "pointer", display: "flex",
-                  alignItems: "center", justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                ×
-              </button>
-            </div>
 
-            {/* Map fills remaining space */}
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <CountyMap
-                userLat={position.lat}
-                userLon={position.lon}
-                accuracy={position.accuracy}
-                heading={position.heading}
-                nearestBoundaryLat={result.nearestBoundaryLat}
-                nearestBoundaryLon={result.nearestBoundaryLon}
-                distanceToBoundaryM={result.distanceToBoundaryM}
-                currentCountyGeoid={result.geoid}
-                currentCountyName={result.countyName}
-                currentCountyGeometry={cached.geometry}
-                adjacentCountyName={result.adjacentCountyName}
-                adjacentCountyState={result.adjacentCountyState}
-                onClose={() => setShowMap(false)}
-              />
+              {/* Map fills remaining space */}
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <CountyMap
+                  userLat={position.lat}
+                  userLon={position.lon}
+                  accuracy={position.accuracy}
+                  heading={position.heading}
+                  nearestBoundaryLat={result?.nearestBoundaryLat ?? null}
+                  nearestBoundaryLon={result?.nearestBoundaryLon ?? null}
+                  distanceToBoundaryM={result?.distanceToBoundaryM ?? null}
+                  currentCountyGeoid={mapResult.geoid}
+                  currentCountyName={mapResult.countyName}
+                  currentCountyGeometry={cached.geometry}
+                  adjacentCountyName={result?.adjacentCountyName ?? null}
+                  adjacentCountyState={result?.adjacentCountyState ?? null}
+                  onClose={() => setShowMap(false)}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -778,6 +784,7 @@ function renderContent(p: ContentProps) {
         </div>
         <div className="btn-group">
           <button className="btn btn-primary" onClick={p.onRefresh}>↻ Try again</button>
+          <button className="btn btn-secondary" onClick={p.onOpenMap}>🗺️ Map</button>
           {pos && <CopyButton label="Copy coords" text={coordsCopyText(pos.lat, pos.lon)} variant="ghost" />}
         </div>
       </div>
@@ -838,6 +845,7 @@ function renderContent(p: ContentProps) {
         </div>
         <div className="btn-group">
           <button className="btn btn-primary" onClick={p.onRefresh}>↻ Try again</button>
+          <button className="btn btn-secondary" onClick={p.onOpenMap}>🗺️ Map</button>
           {pos && <CopyButton label="Copy coords" text={coordsCopyText(pos.lat, pos.lon)} variant="ghost" />}
         </div>
       </div>

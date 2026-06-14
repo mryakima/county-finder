@@ -37,9 +37,9 @@ export interface CountyMapProps {
   accuracy: number;
   /** Device heading in degrees (0–360, N=0, clockwise). Null when stationary. */
   heading: number | null;
-  nearestBoundaryLat: number;
-  nearestBoundaryLon: number;
-  distanceToBoundaryM: number;
+  nearestBoundaryLat: number | null;
+  nearestBoundaryLon: number | null;
+  distanceToBoundaryM: number | null;
   currentCountyGeoid: string;
   currentCountyName: string;
   currentCountyGeometry: Polygon | MultiPolygon;
@@ -167,54 +167,54 @@ export default function CountyMapInner(props: CountyMapProps) {
           }
         }
 
-        // ── Nearest boundary line ─────────────────────────────────────────────
-        const lineColor = boundaryColor(props.distanceToBoundaryM);
+        // ── Nearest boundary line (omitted when offline — data not available) ──
+        if (props.nearestBoundaryLat !== null && props.nearestBoundaryLon !== null && props.distanceToBoundaryM !== null) {
+          const lineColor = boundaryColor(props.distanceToBoundaryM);
 
-        L.polyline(
-          [
-            [props.userLat, props.userLon],
-            [props.nearestBoundaryLat, props.nearestBoundaryLon],
-          ],
-          { color: lineColor, weight: 2.5, dashArray: "7 5", opacity: 0.85 }
-        ).addTo(leafletMap);
+          L.polyline(
+            [
+              [props.userLat, props.userLon],
+              [props.nearestBoundaryLat, props.nearestBoundaryLon],
+            ],
+            { color: lineColor, weight: 2.5, dashArray: "7 5", opacity: 0.85 }
+          ).addTo(leafletMap);
 
-        // Distance label — positioned at midpoint of the dashed line
-        const midLat = (props.userLat + props.nearestBoundaryLat) / 2;
-        const midLon = (props.userLon + props.nearestBoundaryLon) / 2;
-        const distLabel = formatBoundaryDistance(props.distanceToBoundaryM);
+          const midLat = (props.userLat + props.nearestBoundaryLat) / 2;
+          const midLon = (props.userLon + props.nearestBoundaryLon) / 2;
+          const distLabel = formatBoundaryDistance(props.distanceToBoundaryM);
 
-        L.marker([midLat, midLon], {
-          icon: L.divIcon({
-            html: `<span style="
-              background:${lineColor};color:#fff;
-              font-size:11px;font-weight:700;
-              padding:2px 7px;border-radius:10px;
-              white-space:nowrap;pointer-events:none;
-              box-shadow:0 1px 4px rgba(0,0,0,.35);
-              letter-spacing:0.01em;
-            ">${distLabel}</span>`,
-            className: "",
-            iconAnchor: undefined,
-          }),
-          interactive: false,
-          zIndexOffset: 200,
-        }).addTo(leafletMap);
+          L.marker([midLat, midLon], {
+            icon: L.divIcon({
+              html: `<span style="
+                background:${lineColor};color:#fff;
+                font-size:11px;font-weight:700;
+                padding:2px 7px;border-radius:10px;
+                white-space:nowrap;pointer-events:none;
+                box-shadow:0 1px 4px rgba(0,0,0,.35);
+                letter-spacing:0.01em;
+              ">${distLabel}</span>`,
+              className: "",
+              iconAnchor: undefined,
+            }),
+            interactive: false,
+            zIndexOffset: 200,
+          }).addTo(leafletMap);
 
-        // Boundary point marker
-        L.circleMarker([props.nearestBoundaryLat, props.nearestBoundaryLon], {
-          radius: 5,
-          color: "#fff",
-          weight: 2,
-          fillColor: lineColor,
-          fillOpacity: 1,
-        })
-          .bindPopup(
-            props.adjacentCountyName
-              ? `<strong style="font-size:12px">County line</strong><br>→ ${props.adjacentCountyName}${props.adjacentCountyState ? `, ${props.adjacentCountyState}` : ""}`
-              : "<strong>County line</strong>",
-            { closeButton: false }
-          )
-          .addTo(leafletMap);
+          L.circleMarker([props.nearestBoundaryLat, props.nearestBoundaryLon], {
+            radius: 5,
+            color: "#fff",
+            weight: 2,
+            fillColor: lineColor,
+            fillOpacity: 1,
+          })
+            .bindPopup(
+              props.adjacentCountyName
+                ? `<strong style="font-size:12px">County line</strong><br>→ ${props.adjacentCountyName}${props.adjacentCountyState ? `, ${props.adjacentCountyState}` : ""}`
+                : "<strong>County line</strong>",
+              { closeButton: false }
+            )
+            .addTo(leafletMap);
+        }
 
         // ── Heading track (direction of travel) ───────────────────────────────
         if (props.heading !== null) {
