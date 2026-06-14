@@ -168,6 +168,7 @@ export default function HomePage() {
   const watchIdRef = useRef<number | null>(null);
   const lastGeoidRef = useRef<string | null>(null);
   const lastLookupMsRef = useRef<number>(0);
+  const offlineRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load coord format preference
   useEffect(() => {
@@ -327,6 +328,42 @@ export default function HomePage() {
   useEffect(() => () => {
     if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
   }, []);
+
+  // ── Offline position refresh ──────────────────────────────────────────────
+  // watchPosition can stall on some devices when there's no cell signal.
+  // Poll getCurrentPosition every 15 s while offline to keep coords + elevation fresh.
+  useEffect(() => {
+    const isOfflineState = status === "offline_verified" || status === "offline_unverified" || status === "offline_no_position";
+    if (!isOfflineState || !navigator.geolocation) {
+      if (offlineRefreshRef.current) { clearInterval(offlineRefreshRef.current); offlineRefreshRef.current = null; }
+      return;
+    }
+    if (offlineRefreshRef.current) return; // already running
+    offlineRefreshRef.current = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const snap: PositionSnapshot = {
+            lat: pos.coords.latitude, lon: pos.coords.longitude,
+            accuracy: pos.coords.accuracy, timestamp: pos.timestamp,
+            altitude: pos.coords.altitude,
+            altitudeAccuracy: pos.coords.altitudeAccuracy,
+            heading: typeof pos.coords.heading === "number" && isFinite(pos.coords.heading) ? pos.coords.heading : null,
+          };
+          const c = loadCache();
+          if (c) {
+            setPosition(snap);
+            setCached(c);
+            setStatus(pointInGeometry(snap.lat, snap.lon, c.geometry) ? "offline_verified" : "offline_unverified");
+          }
+        },
+        () => { /* silently ignore errors in background refresh */ },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+      );
+    }, 15_000);
+    return () => {
+      if (offlineRefreshRef.current) { clearInterval(offlineRefreshRef.current); offlineRefreshRef.current = null; }
+    };
+  }, [status]);
 
   // ── Share ─────────────────────────────────────────────────────────────────────
   const handleShare = useCallback(async () => {
@@ -713,8 +750,30 @@ function renderContent(p: ContentProps) {
         <div className="details-list">
           {pos && <>
             <div className="detail-row"><span className="detail-label">Accuracy</span><span className="detail-value">{formatAccuracy(pos.accuracy)}</span></div>
-            <div className="detail-row"><span className="detail-label">Latitude</span><span className="detail-value">{fmtLat(pos.lat, coordFormat)}</span></div>
-            <div className="detail-row"><span className="detail-label">Longitude</span><span className="detail-value">{fmtLon(pos.lon, coordFormat)}</span></div>
+            {pos.altitude !== null && (
+              <div className="detail-row">
+                <span className="detail-label">Elevation</span>
+                <span className="detail-value">
+                  {Math.round(pos.altitude * 3.28084).toLocaleString()} ft
+                  {pos.altitudeAccuracy !== null && (
+                    <span style={{ color: "var(--color-text-muted)", fontSize: "var(--font-size-xs)" }}>
+                      {" "}(±{Math.round(pos.altitudeAccuracy * 3.28084)} ft)
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+            <div className="detail-row">
+              <span className="detail-label" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                Coords
+                <button className="coord-toggle" onClick={p.onToggleCoordFormat}>{coordFormat === "decimal" ? "DMS" : "Dec"}</button>
+              </span>
+              <span className="detail-value" style={{ fontVariantNumeric: "tabular-nums" }}>
+                {fmtLat(pos.lat, coordFormat)}<br />
+                {fmtLon(pos.lon, coordFormat)}
+              </span>
+            </div>
+            <div className="detail-row"><span className="detail-label">Location time</span><span className="detail-value">{formatTimestamp(pos.timestamp)}</span></div>
           </>}
         </div>
         <div className="btn-group">
@@ -750,11 +809,37 @@ function renderContent(p: ContentProps) {
         </div>
         <div className="details-list">
           {pos && <>
-            <div className="detail-row"><span className="detail-label">Current lat</span><span className="detail-value">{fmtLat(pos.lat, coordFormat)}</span></div>
-            <div className="detail-row"><span className="detail-label">Current lon</span><span className="detail-value">{fmtLon(pos.lon, coordFormat)}</span></div>
+            <div className="detail-row"><span className="detail-label">Accuracy</span><span className="detail-value">{formatAccuracy(pos.accuracy)}</span></div>
+            {pos.altitude !== null && (
+              <div className="detail-row">
+                <span className="detail-label">Elevation</span>
+                <span className="detail-value">
+                  {Math.round(pos.altitude * 3.28084).toLocaleString()} ft
+                  {pos.altitudeAccuracy !== null && (
+                    <span style={{ color: "var(--color-text-muted)", fontSize: "var(--font-size-xs)" }}>
+                      {" "}(±{Math.round(pos.altitudeAccuracy * 3.28084)} ft)
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+            <div className="detail-row">
+              <span className="detail-label" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                Coords
+                <button className="coord-toggle" onClick={p.onToggleCoordFormat}>{coordFormat === "decimal" ? "DMS" : "Dec"}</button>
+              </span>
+              <span className="detail-value" style={{ fontVariantNumeric: "tabular-nums" }}>
+                {fmtLat(pos.lat, coordFormat)}<br />
+                {fmtLon(pos.lon, coordFormat)}
+              </span>
+            </div>
+            <div className="detail-row"><span className="detail-label">Location time</span><span className="detail-value">{formatTimestamp(pos.timestamp)}</span></div>
           </>}
         </div>
-        <button className="btn btn-primary" onClick={p.onRefresh}>↻ Try again</button>
+        <div className="btn-group">
+          <button className="btn btn-primary" onClick={p.onRefresh}>↻ Try again</button>
+          {pos && <CopyButton label="Copy coords" text={coordsCopyText(pos.lat, pos.lon)} variant="ghost" />}
+        </div>
       </div>
     );
   }
