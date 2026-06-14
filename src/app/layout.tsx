@@ -34,6 +34,11 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <script
+          defer
+          src="https://umami.chasereport.com/script.js"
+          data-website-id="28f4304d-300f-49a6-8f4d-8c8bc80ac3ff"
+        />
       </head>
       <body>
         <ServiceWorkerRegistration />
