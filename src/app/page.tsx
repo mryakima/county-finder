@@ -421,15 +421,21 @@ export default function HomePage() {
       </main>
 
       <footer className="app-footer">
-        {result && (
-          <button
+        <button
             className="btn btn-secondary"
             style={{ marginBottom: "var(--spacing-3)", width: "100%" }}
-            onClick={handleShare}
+            onClick={async () => {
+              const text = "Current County — instantly find your U.S. county using GPS. Great for birders near county lines.";
+              const url = "https://currentcounty.com";
+              if (navigator.share) {
+                try { await navigator.share({ title: "Current County", text, url }); return; }
+                catch { /* fall through */ }
+              }
+              await navigator.clipboard.writeText(`${text}\n${url}`);
+            }}
           >
-            ⬆ Share
+            ⬆ Share app
           </button>
-        )}
         <Link href="/privacy">Privacy</Link>
         {" · "}
         Location is used only to find your county. Not stored.
