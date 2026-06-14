@@ -45,6 +45,20 @@ export default function RootLayout({
         <ServiceWorkerRegistration />
         {children}
         <UpdateBanner />
+        {/* Buy Me a Coffee floating button */}
+        <script
+          data-name="BMC-Widget"
+          data-cfasync="false"
+          src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js"
+          data-id="eBirdPersonalAtlas"
+          data-description="Support me on Buy me a coffee!"
+          data-message="Current County is free — if it's been useful on a birding trip, a coffee is always appreciated!"
+          data-color="#1d4ed8"
+          data-position="Right"
+          data-x_margin="18"
+          data-y_margin="72"
+          defer
+        />
       </body>
     </html>
   );
