@@ -301,8 +301,10 @@ export default function HomePage() {
   // ── Always-on background tracking ────────────────────────────────────────────
   // Starts watchPosition automatically. The first fix triggers the initial lookup;
   // subsequent fixes update silently in the background (rate-limited to 3 s).
-  const startTracking = useCallback(() => {
-    if (!navigator.geolocation) { setStatus("no_geolocation"); return; }
+  // silent=true: restarts watch without showing the "locating" spinner or resetting
+  // lastLookupMsRef — used when resuming from background so there's no UI flash.
+  const startTracking = useCallback((silent = false) => {
+    if (!navigator.geolocation) { if (!silent) setStatus("no_geolocation"); return; }
 
     // Clear any existing watch
     if (watchIdRef.current !== null) {
@@ -310,9 +312,14 @@ export default function HomePage() {
       watchIdRef.current = null;
     }
 
-    setStatus("locating");
-    setErrorMessage(null);
-    lastLookupMsRef.current = 0; // allow immediate first lookup
+    if (!silent) {
+      setStatus("locating");
+      setErrorMessage(null);
+      lastLookupMsRef.current = 0; // allow immediate first lookup
+    }
+    // For silent restarts, lastLookupMsRef is left as-is so the rate limiter
+    // still allows the next position through (it's been a while) but isFirstFix
+    // stays false, meaning the first callback runs as a background update.
 
     const id = navigator.geolocation.watchPosition(
       (pos) => {
@@ -346,11 +353,13 @@ export default function HomePage() {
         runLookup(snap, !isFirstFix);
       },
       (err) => {
-        setStatus(
-          err.code === GeolocationPositionError.PERMISSION_DENIED ? "permission_denied" :
-          err.code === GeolocationPositionError.TIMEOUT ? "geo_timeout" : "geo_error"
-        );
-        setErrorMessage(err.message);
+        if (!silent) {
+          setStatus(
+            err.code === GeolocationPositionError.PERMISSION_DENIED ? "permission_denied" :
+            err.code === GeolocationPositionError.TIMEOUT ? "geo_timeout" : "geo_error"
+          );
+          setErrorMessage(err.message);
+        }
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
     );
@@ -361,6 +370,44 @@ export default function HomePage() {
   useEffect(() => () => {
     if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
   }, []);
+
+  // ── Foreground resume handler ─────────────────────────────────────────────
+  // Browsers (especially iOS Safari) suspend or kill watchPosition when the app
+  // is backgrounded. On visibility restore: fire getCurrentPosition immediately
+  // for a fresh fix (no UI flash), then silently restart the watch in case it
+  // was killed.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!navigator.geolocation) return;
+
+      // Immediate one-shot fix — updates coords/altitude without any UI flash
+      if (checkOnline()) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const snap: PositionSnapshot = {
+              lat: pos.coords.latitude, lon: pos.coords.longitude,
+              accuracy: pos.coords.accuracy, timestamp: pos.timestamp,
+              altitude: pos.coords.altitude,
+              altitudeAccuracy: pos.coords.altitudeAccuracy,
+              heading: typeof pos.coords.heading === "number" && isFinite(pos.coords.heading)
+                ? pos.coords.heading : null,
+            };
+            lastLookupMsRef.current = Date.now();
+            runLookup(snap, true); // background — keeps current result visible
+          },
+          () => { /* silently ignore — watch restart below will recover */ },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+      }
+
+      // Silently restart watch — may have been suspended/killed while backgrounded
+      startTracking(true);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [runLookup, startTracking]);
 
   // ── Offline position refresh ──────────────────────────────────────────────
   // watchPosition can stall on some devices when there's no cell signal.
