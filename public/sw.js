@@ -8,9 +8,20 @@
  *   /offline      → Served from cache as fallback
  */
 
-const CACHE_VERSION = "county-finder-v1";
+const CACHE_VERSION = "county-finder-v2";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
-const PAGE_CACHE = `${CACHE_VERSION}-pages`;
+const PAGE_CACHE   = `${CACHE_VERSION}-pages`;
+const TILE_CACHE   = `${CACHE_VERSION}-tiles`;
+
+// Transparent 1×1 PNG — returned for uncached tiles when offline so Leaflet
+// shows a plain grey square instead of a broken-image icon.
+const EMPTY_TILE_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQ" +
+  "AABjkB6QAAAABJRU5ErkJggg==";
+function emptyTileResponse() {
+  const bytes = Uint8Array.from(atob(EMPTY_TILE_B64), (c) => c.charCodeAt(0));
+  return new Response(bytes, { headers: { "Content-Type": "image/png" } });
+}
 
 // App shell URLs to cache on install
 const APP_SHELL = ["/", "/privacy", "/manifest.json", "/icons/icon.svg"];
@@ -55,7 +66,14 @@ self.addEventListener("fetch", (event) => {
   // Skip non-GET requests (POST /api/lookup goes straight to network)
   if (request.method !== "GET") return;
 
-  // Skip cross-origin requests
+  // OSM map tiles: cache-first so the map works offline for visited areas.
+  // Must be checked before the cross-origin guard.
+  if (url.hostname.endsWith("tile.openstreetmap.org")) {
+    event.respondWith(tileFirst(request));
+    return;
+  }
+
+  // Skip all other cross-origin requests
   if (url.origin !== self.location.origin) return;
 
   // API routes: network only — never cache coordinate lookups
@@ -82,6 +100,23 @@ async function cacheFirst(request, cacheName) {
     cache.put(request, response.clone());
   }
   return response;
+}
+
+async function tileFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  try {
+    const response = await fetch(request);
+    // Cache successful responses (ok) and opaque responses (cross-origin images)
+    if (response.ok || response.type === "opaque") {
+      const cache = await caches.open(TILE_CACHE);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    // Offline and not in cache — return empty tile (no broken-image icon)
+    return emptyTileResponse();
+  }
 }
 
 async function networkFirst(request, cacheName) {

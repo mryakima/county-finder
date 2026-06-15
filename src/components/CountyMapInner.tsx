@@ -219,9 +219,15 @@ export default function CountyMapInner(props: CountyMapProps) {
         mapRef.current = map;
 
         // OSM tile layer
+        // crossOrigin: "anonymous" ensures tiles are cached as non-opaque responses
+        // by the Service Worker, which means they can be reliably read back.
+        // errorTileUrl: a 1×1 transparent PNG so uncached offline tiles show
+        // as plain grey rather than broken-image icons.
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
           maxZoom: 19,
+          crossOrigin: "anonymous",
+          errorTileUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEAAQMAAABmvDolAAAAA1BMVEXe3t7MAlnBAAAAH0lEQVR42u3BMQEAAADCIPuntsUuYAAAAAAAAAAAABwIFAABEw1XZQAAAABJRU5ErkJggg==",
         }).addTo(map);
 
         // County grid (static — not updated on position change)
