@@ -170,6 +170,7 @@ export default function HomePage() {
   const lastGeoidRef = useRef<string | null>(null);
   const lastLookupMsRef = useRef<number>(0);
   const offlineRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load coord format preference
   useEffect(() => {
@@ -192,6 +193,18 @@ export default function HomePage() {
     };
   }, []);
 
+  // ── Umami: cumulative app-active heartbeat (every 5 min while page is visible) ──
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === "visible") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).umami?.track("app-active");
+      }
+    };
+    activeTimerRef.current = setInterval(tick, 5 * 60 * 1000);
+    return () => { if (activeTimerRef.current) clearInterval(activeTimerRef.current); };
+  }, []);
+
   const toggleCoordFormat = () => {
     const next: CoordFormat = coordFormat === "decimal" ? "dms" : "decimal";
     setCoordFormat(next);
@@ -207,6 +220,8 @@ export default function HomePage() {
       setCountyChangedAlert(`Entered ${result.countyName}`);
       setCardFlash(true);
       if ("vibrate" in navigator) navigator.vibrate([150, 80, 150]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).umami?.track("county-crossing");
       setTimeout(() => setCountyChangedAlert(null), 3500);
       setTimeout(() => setCardFlash(false), 900);
 
