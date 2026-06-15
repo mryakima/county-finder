@@ -804,7 +804,7 @@ function renderContent(p: ContentProps) {
 
         {/* eBird — bottom of card */}
         <div className="ebird-row" style={{ marginTop: "var(--spacing-2)", marginBottom: 0 }}>
-          <a className="btn btn-ebird" style={{ width: "100%", justifyContent: "center" }} href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer">
+          <a className="btn btn-ebird" style={{ width: "100%", justifyContent: "center" }} href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-click")}>
             {result.countyBaseName} eBird →
           </a>
         </div>
