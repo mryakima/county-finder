@@ -585,7 +585,7 @@ export default function HomePage() {
                   <div style={{ fontSize: 12, opacity: 0.8 }}>
                     {isOfflineMap
                       ? "Offline — boundary distance unavailable"
-                      : `${formatBoundaryDistance(result!.distanceToBoundaryM)} ${bearingToCardinal(result!.bearingToBoundary)} to county line${result!.adjacentCountyName ? ` · → ${result!.adjacentCountyName}` : ""}`
+                      : `${formatBoundaryDistance(result!.distanceToBoundaryM)} ${bearingToCardinal(result!.bearingToBoundary)} to ${result!.adjacentCountyName ? `county line · → ${result!.adjacentCountyName}` : "coastline"}`
                     }
                   </div>
                 </div>
@@ -731,7 +731,7 @@ function renderContent(p: ContentProps) {
               border: `2px solid ${boundaryColor}`,
             }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>County line</span>
+                <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>{result.adjacentCountyName ? "County line" : "Coastline"}</span>
                 <span style={{ fontWeight: 700, fontSize: "var(--font-size-xl)", color: boundaryColor, fontVariantNumeric: "tabular-nums" }}>
                   {distLabel}{" "}
                   <span style={{ fontSize: "var(--font-size-base)", opacity: 0.8 }}>{cardinal}</span>
