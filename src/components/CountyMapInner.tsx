@@ -7,14 +7,14 @@
  *   1. OpenStreetMap tile layer
  *   2. Nearby county polygons (gray outline, faint fill, tap for name)
  *   3. Current county polygon (green outline + fill)
- *   4. Dashed line: user position → nearest boundary point
- *   5. Boundary point dot
- *   6. Heading track line (orange, when device is moving)
- *   7. GPS accuracy circle
- *   8. User position dot (blue)
+ *   4. [LIVE] Dashed line: user position → nearest boundary point
+ *   5. [LIVE] Boundary point dot
+ *   6. [LIVE] Heading track line (orange, when device is moving)
+ *   7. [LIVE] GPS accuracy circle
+ *   8. [LIVE] User position dot (blue)
  *
- * County name labels appear on tap/click (Leaflet popup). The current county
- * name is shown as a permanent tooltip so it is always visible.
+ * LIVE layers are updated in-place whenever position props change — no map
+ * recreation or flash. County polygons are static after initial load.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -48,7 +48,7 @@ export interface CountyMapProps {
   onClose: () => void;
 }
 
-// ── Distance formatting (mirrors page.tsx) ──────────────────────────────────
+// ── Distance formatting (mirrors page.tsx) ────────────────────────────────────
 
 function formatBoundaryDistance(m: number): string {
   const ft = m * 3.28084;
@@ -62,9 +62,9 @@ function formatBoundaryDistance(m: number): string {
 
 function boundaryColor(m: number): string {
   const ft = m * 3.28084;
-  if (ft < 300)  return "#e53935"; // red   — inside 300 ft
-  if (ft < 2640) return "#fb8c00"; // amber — inside 0.5 mi
-  return "#2e7d32";                // green — further out
+  if (ft < 300)  return "#e53935";
+  if (ft < 2640) return "#fb8c00";
+  return "#2e7d32";
 }
 
 // ── Destination point given origin, bearing (°), distance (m) ────────────────
@@ -85,194 +85,177 @@ function destinationPoint(
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CountyMapInner(props: CountyMapProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
-  const [errorMsg, setErrorMsg] = useState("");
+  const containerRef  = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapRef        = useRef<any>(null);   // Leaflet map instance
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const leafletRef    = useRef<any>(null);   // Leaflet library (loaded once)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const liveLayersRef = useRef<any[]>([]);   // layers removed+re-added on each position update
 
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [errorMsg,  setErrorMsg]  = useState("");
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  // Remove all live layers from the map.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function clearLiveLayers(map: any) {
+    for (const layer of liveLayersRef.current) {
+      try { map.removeLayer(layer); } catch { /* already removed */ }
+    }
+    liveLayersRef.current = [];
+  }
+
+  // Add all position-dependent layers and store refs for future cleanup.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function drawLiveLayers(L: any, map: any, p: CountyMapProps) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const added: any[] = [];
+
+    // ── Nearest boundary line ───────────────────────────────────────────────
+    if (p.nearestBoundaryLat !== null && p.nearestBoundaryLon !== null && p.distanceToBoundaryM !== null) {
+      const lineColor  = boundaryColor(p.distanceToBoundaryM);
+      const distLabel  = formatBoundaryDistance(p.distanceToBoundaryM);
+
+      const line = L.polyline(
+        [[p.userLat, p.userLon], [p.nearestBoundaryLat, p.nearestBoundaryLon]],
+        { color: lineColor, weight: 2.5, dashArray: "7 5", opacity: 0.85 }
+      ).addTo(map);
+      added.push(line);
+
+      const midLat = (p.userLat + p.nearestBoundaryLat) / 2;
+      const midLon = (p.userLon + p.nearestBoundaryLon) / 2;
+      const midMarker = L.marker([midLat, midLon], {
+        icon: L.divIcon({
+          html: `<span style="background:${lineColor};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.35);">${distLabel}</span>`,
+          className: "",
+          iconAnchor: undefined,
+        }),
+        interactive: false,
+        zIndexOffset: 200,
+      }).addTo(map);
+      added.push(midMarker);
+
+      const boundaryDot = L.circleMarker([p.nearestBoundaryLat, p.nearestBoundaryLon], {
+        radius: 5, color: "#fff", weight: 2,
+        fillColor: lineColor, fillOpacity: 1,
+      })
+        .bindPopup(
+          p.adjacentCountyName
+            ? `<strong style="font-size:12px">County line</strong><br>→ ${p.adjacentCountyName}${p.adjacentCountyState ? `, ${p.adjacentCountyState}` : ""}`
+            : "<strong>Coastline</strong>",
+          { closeButton: false }
+        )
+        .addTo(map);
+      added.push(boundaryDot);
+    }
+
+    // ── Heading track (direction of travel) ─────────────────────────────────
+    if (p.heading !== null) {
+      const trackEnd = destinationPoint(p.userLat, p.userLon, p.heading, 3000);
+      const trackLine = L.polyline([[p.userLat, p.userLon], trackEnd], {
+        color: "#FF6D00", weight: 3, opacity: 0.8,
+      }).addTo(map);
+      added.push(trackLine);
+
+      const arrowMarker = L.marker(trackEnd, {
+        icon: L.divIcon({
+          html: `<div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:12px solid #FF6D00;transform:rotate(${p.heading}deg);transform-origin:center bottom;"></div>`,
+          className: "",
+          iconSize: [12, 12],
+          iconAnchor: [6, 12],
+        }),
+        interactive: false,
+      }).addTo(map);
+      added.push(arrowMarker);
+    }
+
+    // ── GPS accuracy circle ──────────────────────────────────────────────────
+    const accCircle = L.circle([p.userLat, p.userLon], {
+      radius: p.accuracy,
+      color: "#1976D2", fillColor: "#1976D2",
+      fillOpacity: 0.08, weight: 1, dashArray: "4 3",
+    }).addTo(map);
+    added.push(accCircle);
+
+    // ── User position dot ────────────────────────────────────────────────────
+    const dot = L.circleMarker([p.userLat, p.userLon], {
+      radius: 8, color: "#fff", weight: 2.5,
+      fillColor: "#1976D2", fillOpacity: 1,
+    })
+      .bindPopup("<strong>Your position</strong>", { closeButton: false })
+      .addTo(map);
+    added.push(dot);
+
+    liveLayersRef.current = added;
+  }
+
+  // ── Init effect — runs once ────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
     let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let leafletMap: any = null;
 
     (async () => {
       try {
-        // Dynamic import — avoids SSR issues with window/document
         const L = (await import("leaflet")).default;
-
         if (cancelled || !containerRef.current) return;
 
-        // ── Fetch nearby counties ─────────────────────────────────────────────
-        const resp = await fetch(
-          `/api/nearby-counties?lat=${props.userLat}&lon=${props.userLon}`
-        );
+        leafletRef.current = L;
+
+        // Fetch nearby counties
+        const resp = await fetch(`/api/nearby-counties?lat=${props.userLat}&lon=${props.userLon}`);
         if (!resp.ok) throw new Error("Failed to load county grid.");
         const { counties }: { counties: NearbyCounty[] } = await resp.json();
-
         if (cancelled || !containerRef.current) return;
 
-        // ── Create map ────────────────────────────────────────────────────────
-        leafletMap = L.map(containerRef.current, {
+        // Create map
+        const map = L.map(containerRef.current, {
           center: [props.userLat, props.userLon],
           zoom: 10,
           zoomControl: true,
           attributionControl: true,
         });
+        mapRef.current = map;
 
         // OSM tile layer
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
           maxZoom: 19,
-        }).addTo(leafletMap);
+        }).addTo(map);
 
-        // ── County grid ───────────────────────────────────────────────────────
+        // County grid (static — not updated on position change)
         for (const county of counties) {
           const isCurrent = county.geoid === props.currentCountyGeoid;
           const layer = L.geoJSON(county.geometry as Parameters<typeof L.geoJSON>[0], {
             style: isCurrent
-              ? { color: "#4a7c3f", weight: 2.5, fillColor: "#c8e6c9", fillOpacity: 0.35, dashArray: undefined }
+              ? { color: "#4a7c3f", weight: 2.5, fillColor: "#c8e6c9", fillOpacity: 0.35 }
               : { color: "#888",    weight: 1,   fillColor: "#ffffff",  fillOpacity: 0.05 },
           });
+          const label = county.stateAbbr ? `${county.nameLsad}, ${county.stateAbbr}` : county.nameLsad;
+          layer.bindPopup(`<strong style="font-size:13px">${label}</strong>`, { closeButton: false, maxWidth: 200 });
+          layer.addTo(map);
 
-          // Popup on tap/click shows county name
-          const label = county.stateAbbr
-            ? `${county.nameLsad}, ${county.stateAbbr}`
-            : county.nameLsad;
-
-          layer.bindPopup(`<strong style="font-size:13px">${label}</strong>`, {
-            closeButton: false,
-            maxWidth: 200,
-          });
-
-          layer.addTo(leafletMap);
-
-          // Permanent label for current county only
           if (isCurrent) {
             const [labelLon, labelLat] = county.labelCenter;
             L.marker([labelLat, labelLon], {
               icon: L.divIcon({
-                html: `<span style="
-                  background:rgba(74,124,63,0.85);color:#fff;
-                  font-size:10px;font-weight:700;
-                  padding:2px 6px;border-radius:3px;
-                  white-space:nowrap;pointer-events:none;
-                  box-shadow:0 1px 3px rgba(0,0,0,.3)
-                ">${county.nameLsad}</span>`,
+                html: `<span style="background:rgba(74,124,63,0.85);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.3)">${county.nameLsad}</span>`,
                 className: "",
                 iconAnchor: undefined,
               }),
               interactive: false,
               zIndexOffset: 100,
-            }).addTo(leafletMap);
+            }).addTo(map);
           }
         }
 
-        // ── Nearest boundary line (omitted when offline — data not available) ──
-        if (props.nearestBoundaryLat !== null && props.nearestBoundaryLon !== null && props.distanceToBoundaryM !== null) {
-          const lineColor = boundaryColor(props.distanceToBoundaryM);
+        // Initial live layers (position at mount time)
+        drawLiveLayers(L, map, props);
 
-          L.polyline(
-            [
-              [props.userLat, props.userLon],
-              [props.nearestBoundaryLat, props.nearestBoundaryLon],
-            ],
-            { color: lineColor, weight: 2.5, dashArray: "7 5", opacity: 0.85 }
-          ).addTo(leafletMap);
-
-          const midLat = (props.userLat + props.nearestBoundaryLat) / 2;
-          const midLon = (props.userLon + props.nearestBoundaryLon) / 2;
-          const distLabel = formatBoundaryDistance(props.distanceToBoundaryM);
-
-          L.marker([midLat, midLon], {
-            icon: L.divIcon({
-              html: `<span style="
-                background:${lineColor};color:#fff;
-                font-size:11px;font-weight:700;
-                padding:2px 7px;border-radius:10px;
-                white-space:nowrap;pointer-events:none;
-                box-shadow:0 1px 4px rgba(0,0,0,.35);
-                letter-spacing:0.01em;
-              ">${distLabel}</span>`,
-              className: "",
-              iconAnchor: undefined,
-            }),
-            interactive: false,
-            zIndexOffset: 200,
-          }).addTo(leafletMap);
-
-          L.circleMarker([props.nearestBoundaryLat, props.nearestBoundaryLon], {
-            radius: 5,
-            color: "#fff",
-            weight: 2,
-            fillColor: lineColor,
-            fillOpacity: 1,
-          })
-            .bindPopup(
-              props.adjacentCountyName
-                ? `<strong style="font-size:12px">County line</strong><br>→ ${props.adjacentCountyName}${props.adjacentCountyState ? `, ${props.adjacentCountyState}` : ""}`
-                : "<strong>County line</strong>",
-              { closeButton: false }
-            )
-            .addTo(leafletMap);
-        }
-
-        // ── Heading track (direction of travel) ───────────────────────────────
-        if (props.heading !== null) {
-          // Extend 3 km in the direction of travel
-          const trackEnd = destinationPoint(props.userLat, props.userLon, props.heading, 3000);
-
-          // Track line
-          L.polyline([[props.userLat, props.userLon], trackEnd], {
-            color: "#FF6D00",
-            weight: 3,
-            opacity: 0.8,
-          }).addTo(leafletMap);
-
-          // Arrowhead at the end using a rotated divIcon
-          L.marker(trackEnd, {
-            icon: L.divIcon({
-              html: `<div style="
-                width:0;height:0;
-                border-left:6px solid transparent;
-                border-right:6px solid transparent;
-                border-bottom:12px solid #FF6D00;
-                transform:rotate(${props.heading}deg);
-                transform-origin:center bottom;
-              "></div>`,
-              className: "",
-              iconSize: [12, 12],
-              iconAnchor: [6, 12],
-            }),
-            interactive: false,
-          }).addTo(leafletMap);
-        }
-
-        // ── GPS accuracy circle ───────────────────────────────────────────────
-        L.circle([props.userLat, props.userLon], {
-          radius: props.accuracy,
-          color: "#1976D2",
-          fillColor: "#1976D2",
-          fillOpacity: 0.08,
-          weight: 1,
-          dashArray: "4 3",
-        }).addTo(leafletMap);
-
-        // ── User position dot ─────────────────────────────────────────────────
-        L.circleMarker([props.userLat, props.userLon], {
-          radius: 8,
-          color: "#fff",
-          weight: 2.5,
-          fillColor: "#1976D2",
-          fillOpacity: 1,
-        })
-          .bindPopup("<strong>Your position</strong>", { closeButton: false })
-          .addTo(leafletMap);
-
-        // ── Fit to current county ─────────────────────────────────────────────
-        // Fit bounds to the current county geometry, then ensure user is visible.
+        // Fit to current county
         const countyLayer = L.geoJSON(props.currentCountyGeometry as Parameters<typeof L.geoJSON>[0]);
-        const countyBounds = countyLayer.getBounds();
-        leafletMap.fitBounds(countyBounds, { padding: [24, 24], maxZoom: 12 });
+        map.fitBounds(countyLayer.getBounds(), { padding: [24, 24], maxZoom: 12 });
 
         if (cancelled) return;
         setLoadState("ready");
@@ -285,28 +268,43 @@ export default function CountyMapInner(props: CountyMapProps) {
 
     return () => {
       cancelled = true;
-      if (leafletMap) {
-        leafletMap.remove();
-        leafletMap = null;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
       }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Live update effect — re-draws moving layers on each position fix ────────
+  useEffect(() => {
+    const L   = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return; // map not ready yet (init still loading)
+
+    clearLiveLayers(map);
+    drawLiveLayers(L, map, props);
+  }, [ // eslint-disable-line react-hooks/exhaustive-deps
+    props.userLat,
+    props.userLon,
+    props.accuracy,
+    props.heading,
+    props.nearestBoundaryLat,
+    props.nearestBoundaryLon,
+    props.distanceToBoundaryM,
+  ]);
+
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      {/* Loading overlay */}
       {loadState === "loading" && (
         <div style={{
           position: "absolute", inset: 0, zIndex: 1000,
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: "rgba(249,247,244,0.85)",
-          fontSize: 14, color: "#666",
+          background: "rgba(249,247,244,0.85)", fontSize: 14, color: "#666",
         }}>
           Loading map…
         </div>
       )}
 
-      {/* Error state */}
       {loadState === "error" && (
         <div style={{
           position: "absolute", inset: 0, zIndex: 1000,
@@ -329,7 +327,6 @@ export default function CountyMapInner(props: CountyMapProps) {
         </div>
       )}
 
-      {/* Map container */}
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
     </div>
   );
