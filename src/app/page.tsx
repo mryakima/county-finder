@@ -160,6 +160,7 @@ export default function HomePage() {
   const [coordFormat, setCoordFormat] = useState<CoordFormat>("decimal");
   const [countyChangedAlert, setCountyChangedAlert] = useState<string | null>(null);
   const [cardFlash, setCardFlash] = useState(false);
+  const [showBmcToast, setShowBmcToast] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [showMap, setShowMap] = useState(false);
@@ -208,6 +209,23 @@ export default function HomePage() {
       if ("vibrate" in navigator) navigator.vibrate([150, 80, 150]);
       setTimeout(() => setCountyChangedAlert(null), 3500);
       setTimeout(() => setCardFlash(false), 900);
+
+      // ── Buy Me a Coffee milestone nudge ─────────────────────────────────
+      // Nudge at milestones 5 and 20 only, once each, and only when online.
+      if (navigator.onLine) {
+        try {
+          const BMC_MILESTONES = [5, 20];
+          const crossings = parseInt(localStorage.getItem("cc_county_crossings") || "0", 10) + 1;
+          localStorage.setItem("cc_county_crossings", String(crossings));
+          const shown: number[] = JSON.parse(localStorage.getItem("cc_bmcc_shown") || "[]");
+          const hit = BMC_MILESTONES.find(m => m === crossings && !shown.includes(m));
+          if (hit !== undefined) {
+            shown.push(hit);
+            localStorage.setItem("cc_bmcc_shown", JSON.stringify(shown));
+            setTimeout(() => setShowBmcToast(true), 7000);
+          }
+        } catch { /* localStorage unavailable */ }
+      }
     }
     lastGeoidRef.current = geoid;
   }, [result?.geoid]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -429,6 +447,49 @@ export default function HomePage() {
     <div className="app-shell">
       {countyChangedAlert && (
         <div className="county-toast">🎉 {countyChangedAlert}</div>
+      )}
+
+      {showBmcToast && (
+        <div style={{
+          position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+          zIndex: 9998, background: "#1d4ed8", color: "#fff",
+          borderRadius: 16, padding: "14px 18px",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.25)",
+          maxWidth: "calc(100vw - 32px)", width: 320,
+          fontFamily: "inherit", fontSize: 13,
+          animation: "toast-in 0.25s ease-out",
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>☕ Enjoying Current County?</div>
+          <div style={{ color: "rgba(255,255,255,0.85)", lineHeight: 1.5, marginBottom: 12 }}>
+            Current County is free with no ads — if it&apos;s been useful in the field, a coffee helps keep the server running.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <a
+              href="https://buymeacoffee.com/eBirdPersonalAtlas"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setShowBmcToast(false)}
+              style={{
+                flex: 1, background: "#fff", color: "#1d4ed8",
+                border: "none", borderRadius: 8, padding: "8px 12px",
+                fontSize: 13, fontWeight: 700, cursor: "pointer",
+                textDecoration: "none", textAlign: "center",
+              }}
+            >
+              Buy me a coffee ☕
+            </a>
+            <button
+              onClick={() => setShowBmcToast(false)}
+              style={{
+                background: "rgba(255,255,255,0.15)", color: "#fff",
+                border: "none", borderRadius: 8, padding: "8px 14px",
+                fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              Maybe later
+            </button>
+          </div>
+        </div>
       )}
 
       <header className="app-header">
