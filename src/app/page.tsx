@@ -795,11 +795,10 @@ function renderContent(p: ContentProps) {
         {/* Actions */}
         <div className="btn-group">
           <button className="btn btn-primary" onClick={p.onRefresh}>↻ Refresh</button>
-          <button className="btn btn-ghost" onClick={p.onShare}>⬆ Share</button>
           <button className="btn btn-ghost" onClick={p.onOpenMap}>🗺️ Map</button>
+          <button className="btn btn-ghost" style={{ width: "100%" }} onClick={p.onShare}>⬆ Share position data</button>
           <div className="btn-row">
             <CopyButton label="Copy coords" text={coordsCopyText(position.lat, position.lon)} variant="secondary" />
-            <CopyButton label="Copy result" text={buildFullCopyText(result, position)} variant="secondary" />
           </div>
         </div>
 

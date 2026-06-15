@@ -652,7 +652,7 @@ body {
 .btn-ebird {
   background: #16a34a;
   color: white;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   padding: var(--spacing-1) var(--spacing-3);
   min-height: 32px;
 }
