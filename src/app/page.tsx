@@ -227,11 +227,8 @@ export default function HomePage() {
   const handleDismissDisclaimer = () => {
     try {
       localStorage.setItem("cc_disclaimer_seen", "true");
-      // Mark current version as seen so What’s New doesn’t fire immediately after
-      fetch("/version.json")
-        .then((r) => r.json())
-        .then(({ v }: { v: number }) => localStorage.setItem("cc_whats_new_version", String(v)))
-        .catch(() => {});
+      // Note: cc_whats_new_version is intentionally NOT set here so that
+      // What’s New fires on the very next open after the disclaimer is dismissed.
     } catch { /* localStorage unavailable */ }
     setShowDisclaimer(false);
   };
