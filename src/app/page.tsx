@@ -166,6 +166,15 @@ function formatStaleness(ts: number, now: number): { text: string; level: Stalen
 const LIVE_MIN_INTERVAL_MS = 3000; // min ms between background lookups
 const CLOSE_BOUNDARY_M = 91;       // ~300 ft — threshold for dual-county banner
 
+// ── What's New content ───────────────────────────────────────────────────────
+// Update this list when deploying a significant release.
+const WHATS_NEW_ITEMS = [
+  "Map stays live — the blue dot and distance to county line now update in real time while the map is open.",
+  "Faster refresh after backgrounding — coordinates and elevation update immediately when you return to the app.",
+  "Coastlines labeled correctly — nearby water boundaries now show as \u201cCoastline\u201d instead of \u201cCounty line\u201d.",
+  "eBird button — now shows the county name so you know exactly where you\u2019re linking to.",
+];
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -178,6 +187,9 @@ export default function HomePage() {
   const [countyChangedAlert, setCountyChangedAlert] = useState<string | null>(null);
   const [cardFlash, setCardFlash] = useState(false);
   const [milestoneToast, setMilestoneToast] = useState<string | null>(null);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [showWhatsNew,   setShowWhatsNew]   = useState(false);
+  const [whatsNewVersion, setWhatsNewVersion] = useState<number | null>(null);
 
   const [isOnline, setIsOnline] = useState(true);
   const [now, setNow] = useState(Date.now());
@@ -189,6 +201,47 @@ export default function HomePage() {
   const lastLookupMsRef = useRef<number>(0);
   const offlineRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Modal sequencing: disclaimer (first-ever launch) then What’s New (each update) ──
+  useEffect(() => {
+    try {
+      const disclaimerSeen = localStorage.getItem("cc_disclaimer_seen") === "true";
+      if (!disclaimerSeen) {
+        setShowDisclaimer(true);
+        return;
+      }
+      // Disclaimer already seen — check for a new app version
+      fetch("/version.json")
+        .then((r) => r.json())
+        .then(({ v }: { v: number }) => {
+          const lastSeen = parseInt(localStorage.getItem("cc_whats_new_version") || "0", 10);
+          if (v > lastSeen) {
+            setWhatsNewVersion(v);
+            setShowWhatsNew(true);
+          }
+        })
+        .catch(() => {});
+    } catch { /* localStorage unavailable */ }
+  }, []);
+
+  const handleDismissDisclaimer = () => {
+    try {
+      localStorage.setItem("cc_disclaimer_seen", "true");
+      // Mark current version as seen so What’s New doesn’t fire immediately after
+      fetch("/version.json")
+        .then((r) => r.json())
+        .then(({ v }: { v: number }) => localStorage.setItem("cc_whats_new_version", String(v)))
+        .catch(() => {});
+    } catch { /* localStorage unavailable */ }
+    setShowDisclaimer(false);
+  };
+
+  const handleDismissWhatsNew = () => {
+    try {
+      if (whatsNewVersion) localStorage.setItem("cc_whats_new_version", String(whatsNewVersion));
+    } catch { /* localStorage unavailable */ }
+    setShowWhatsNew(false);
+  };
 
   // Load coord format preference
   useEffect(() => {
@@ -539,6 +592,75 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* ── Disclaimer modal ────────────────────────────────────────── */}
+      {showDisclaimer && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 10000,
+          background: "rgba(0,0,0,0.55)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "24px",
+        }}>
+          <div style={{
+            background: "var(--color-surface)", borderRadius: 16,
+            padding: "28px 24px", maxWidth: 360, width: "100%",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+            fontFamily: "inherit",
+          }}>
+            <div style={{ fontSize: 36, textAlign: "center", marginBottom: 12 }}>🚗</div>
+            <h2 style={{ margin: "0 0 12px", fontSize: "var(--font-size-xl)", textAlign: "center" }}>
+              Stay safe out there
+            </h2>
+            <p style={{ margin: "0 0 24px", color: "var(--color-text-muted)", lineHeight: 1.6, textAlign: "center", fontSize: "var(--font-size-base)" }}>
+              Current County is designed to be used when you&apos;re stopped — not while driving.
+              Please pull over before checking the app.
+            </p>
+            <button
+              className="btn btn-primary"
+              style={{ width: "100%" }}
+              onClick={handleDismissDisclaimer}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── What’s New modal ───────────────────────────────────────── */}
+      {showWhatsNew && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 10000,
+          background: "rgba(0,0,0,0.55)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "24px",
+        }}>
+          <div style={{
+            background: "var(--color-surface)", borderRadius: 16,
+            padding: "28px 24px", maxWidth: 360, width: "100%",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+            fontFamily: "inherit",
+          }}>
+            <div style={{ fontSize: 36, textAlign: "center", marginBottom: 12 }}>✨</div>
+            <h2 style={{ margin: "0 0 16px", fontSize: "var(--font-size-xl)", textAlign: "center" }}>
+              What&apos;s New
+            </h2>
+            <ul style={{ margin: "0 0 16px", padding: "0 0 0 20px", lineHeight: 1.7, fontSize: "var(--font-size-sm)", color: "var(--color-text)" }}>
+              {WHATS_NEW_ITEMS.map((item, i) => (
+                <li key={i} style={{ marginBottom: 8 }}>{item}</li>
+              ))}
+            </ul>
+            <p style={{ margin: "0 0 20px", fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", textAlign: "center", lineHeight: 1.5 }}>
+              For all improvements to take effect, you may need to close and reopen the app.
+            </p>
+            <button
+              className="btn btn-primary"
+              style={{ width: "100%" }}
+              onClick={handleDismissWhatsNew}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
 
       <header className="app-header">
         <svg className="app-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
