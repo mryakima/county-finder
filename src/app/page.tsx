@@ -70,6 +70,23 @@ function eBirdUrl(stateAbbr: string, geoid: string): string {
   return `https://ebird.org/region/US-${stateAbbr}-${geoid.slice(2)}`;
 }
 
+const COUNTY_TYPE_ABBR: Record<string, string> = {
+  "County": "Co",
+  "Parish": "Par",
+  "Borough": "Bor",
+  "Municipality": "Mun",
+  "Census Area": "CA",
+  "City and Borough": "C&B",
+  "Municipio": "Mun",
+  "District": "Dist",
+  "City": "City",
+};
+
+function countyTypeAbbr(nameLsad: string, baseName: string): string {
+  const suffix = nameLsad.slice(baseName.length).trim();
+  return COUNTY_TYPE_ABBR[suffix] ?? suffix;
+}
+
 // ── Share / copy ──────────────────────────────────────────────────────────────
 
 function coordsCopyText(lat: number, lon: number): string {
@@ -160,6 +177,7 @@ export default function HomePage() {
   const [coordFormat, setCoordFormat] = useState<CoordFormat>("decimal");
   const [countyChangedAlert, setCountyChangedAlert] = useState<string | null>(null);
   const [cardFlash, setCardFlash] = useState(false);
+  const [milestoneToast, setMilestoneToast] = useState<string | null>(null);
 
   const [isOnline, setIsOnline] = useState(true);
   const [now, setNow] = useState(Date.now());
@@ -224,6 +242,26 @@ export default function HomePage() {
       (window as any).umami?.track("county-crossing");
       setTimeout(() => setCountyChangedAlert(null), 3500);
       setTimeout(() => setCardFlash(false), 900);
+
+      // ── County crossing milestones ─────────────────────────────────────
+      try {
+        const MILESTONES: Record<number, string> = {
+          5:  "5 county crossings — nice work! Tap the eBird button to see what’s been spotted in each one.",
+          20: "20 county crossings — you’re a serious county lister. Keep exploring!",
+        };
+        const crossings = parseInt(localStorage.getItem("cc_county_crossings") || "0", 10) + 1;
+        localStorage.setItem("cc_county_crossings", String(crossings));
+        const shown: number[] = JSON.parse(localStorage.getItem("cc_milestones_shown") || "[]");
+        const msg = MILESTONES[crossings];
+        if (msg && !shown.includes(crossings)) {
+          shown.push(crossings);
+          localStorage.setItem("cc_milestones_shown", JSON.stringify(shown));
+          setTimeout(() => {
+            setMilestoneToast(msg);
+            setTimeout(() => setMilestoneToast(null), 6000);
+          }, 4000);
+        }
+      } catch { /* localStorage unavailable */ }
 
     }
     lastGeoidRef.current = geoid;
@@ -493,6 +531,12 @@ export default function HomePage() {
     <div className="app-shell">
       {countyChangedAlert && (
         <div className="county-toast">🎉 {countyChangedAlert}</div>
+      )}
+
+      {milestoneToast && (
+        <div className="county-toast" style={{ background: "var(--color-success)", maxWidth: 320, textAlign: "center", lineHeight: 1.4, padding: "10px 16px" }}>
+          🏆 {milestoneToast}
+        </div>
       )}
 
 
@@ -794,7 +838,7 @@ function renderContent(p: ContentProps) {
         {/* eBird — bottom of card */}
         <div className="ebird-row" style={{ marginTop: "var(--spacing-2)", marginBottom: 0 }}>
           <a className="btn btn-ebird" style={{ width: "100%", justifyContent: "center" }} href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-click")}>
-            {result.countyBaseName} eBird →
+            {result.countyBaseName} {countyTypeAbbr(result.countyName, result.countyBaseName)} eBird →
           </a>
         </div>
       </div>
