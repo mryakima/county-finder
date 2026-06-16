@@ -342,8 +342,15 @@ export default function HomePage() {
         setStatus("success");
         setErrorMessage(null);
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (window as any).umami?.track("county-lookup", { state: r.stateAbbr });
+          const today = new Date().toISOString().slice(0, 10);
+          const KEY = "cc_state_tracked";
+          const stored = JSON.parse(localStorage.getItem(KEY) ?? "{}");
+          const trackedToday: string[] = stored.date === today ? stored.states : [];
+          if (!trackedToday.includes(r.stateAbbr)) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (window as any).umami?.track("county-lookup", { state: r.stateAbbr });
+            localStorage.setItem(KEY, JSON.stringify({ date: today, states: [...trackedToday, r.stateAbbr] }));
+          }
         } catch { /* ignore analytics failures */ }
       } else {
         const code = data.errorCode as string;
