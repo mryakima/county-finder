@@ -703,6 +703,8 @@ export default function HomePage() {
           </button>
         <Link href="/privacy">Privacy</Link>
         {" · "}
+        <Link href="/contact">Contact</Link>
+        {" · "}
         Location is used only to find your county. Not stored.
       </footer>
 
