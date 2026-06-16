@@ -341,6 +341,10 @@ export default function HomePage() {
         setPosition(snap);
         setStatus("success");
         setErrorMessage(null);
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).umami?.track("county-lookup", { state: r.stateAbbr });
+        } catch { /* ignore analytics failures */ }
       } else {
         const code = data.errorCode as string;
         // On background updates, don't clobber a good result with an error
@@ -700,7 +704,7 @@ export default function HomePage() {
         {" · "}
         <Link href="/contact">Contact</Link>
         {" · "}
-        Location is used only to find your county. Not stored.
+        Location is used only to find your county. GPS not stored. Lookups counted by state anonymously.
       </footer>
 
       {/* ── County map modal ───────────────────────────────────────────────── */}
