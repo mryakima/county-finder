@@ -883,7 +883,7 @@ function renderContent(p: ContentProps) {
               border: `2px solid ${boundaryColor}`,
             }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>{result.adjacentCountyName ? "County line" : "Coastline"}</span>
+                <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>{result.adjacentCountyName ? "Closest county line" : "Coastline"}</span>
                 <span style={{ fontWeight: 700, fontSize: "var(--font-size-xl)", color: boundaryColor, fontVariantNumeric: "tabular-nums" }}>
                   {distLabel}{" "}
                   <span style={{ fontSize: "var(--font-size-base)", opacity: 0.8 }}>{cardinal}</span>
