@@ -167,7 +167,9 @@ const LIVE_MIN_INTERVAL_MS = 3000; // min ms between background lookups
 const CLOSE_BOUNDARY_M = 91;       // ~300 ft — threshold for dual-county banner
 
 // ── What's New content ───────────────────────────────────────────────────────
-// Update this list when deploying a significant release.
+// Bump WHATS_NEW_VERSION (YYYY-MM-DD or any string) when you update WHATS_NEW_ITEMS.
+// The modal fires once per version, independent of build/deploy timestamps.
+const WHATS_NEW_VERSION = "2026-06-15";
 const WHATS_NEW_ITEMS = [
   "Map stays live — the blue dot and distance to county line now update in real time while the map is open.",
   "Faster refresh after backgrounding — coordinates and elevation update immediately when you return to the app.",
@@ -188,8 +190,7 @@ export default function HomePage() {
   const [cardFlash, setCardFlash] = useState(false);
   const [milestoneToast, setMilestoneToast] = useState<string | null>(null);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
-  const [showWhatsNew,   setShowWhatsNew]   = useState(false);
-  const [whatsNewVersion, setWhatsNewVersion] = useState<number | null>(null);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
 
   const [isOnline, setIsOnline] = useState(true);
   const [now, setNow] = useState(Date.now());
@@ -210,17 +211,11 @@ export default function HomePage() {
         setShowDisclaimer(true);
         return;
       }
-      // Disclaimer already seen — check for a new app version
-      fetch("/version.json")
-        .then((r) => r.json())
-        .then(({ v }: { v: number }) => {
-          const lastSeen = parseInt(localStorage.getItem("cc_whats_new_version") || "0", 10);
-          if (v > lastSeen) {
-            setWhatsNewVersion(v);
-            setShowWhatsNew(true);
-          }
-        })
-        .catch(() => {});
+      // Disclaimer already seen — check if there's a new What's New version
+      const lastSeen = localStorage.getItem("cc_whats_new_version");
+      if (lastSeen !== WHATS_NEW_VERSION) {
+        setShowWhatsNew(true);
+      }
     } catch { /* localStorage unavailable */ }
   }, []);
 
@@ -235,7 +230,7 @@ export default function HomePage() {
 
   const handleDismissWhatsNew = () => {
     try {
-      if (whatsNewVersion) localStorage.setItem("cc_whats_new_version", String(whatsNewVersion));
+      localStorage.setItem("cc_whats_new_version", WHATS_NEW_VERSION);
     } catch { /* localStorage unavailable */ }
     setShowWhatsNew(false);
   };
