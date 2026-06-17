@@ -418,6 +418,11 @@ export default function HomePage() {
         const isFirstFix = lastLookupMsRef.current === 0;
         const now = Date.now();
 
+        if (isFirstFix) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).umami?.track("location-granted");
+        }
+
         if (!isFirstFix && now - lastLookupMsRef.current < LIVE_MIN_INTERVAL_MS) return;
         lastLookupMsRef.current = now;
 
@@ -436,6 +441,10 @@ export default function HomePage() {
       },
       (err) => {
         if (!silent) {
+          if (err.code === GeolocationPositionError.PERMISSION_DENIED) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (window as any).umami?.track("location-denied");
+          }
           setStatus(
             err.code === GeolocationPositionError.PERMISSION_DENIED ? "permission_denied" :
             err.code === GeolocationPositionError.TIMEOUT ? "geo_timeout" : "geo_error"
