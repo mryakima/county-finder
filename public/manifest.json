@@ -4,16 +4,10 @@
   "description": "Find the U.S. county you're currently in.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#1d4ed8",
+  "background_color": "#0a1628",
+  "theme_color": "#0a1628",
   "orientation": "portrait-primary",
   "icons": [
-    {
-      "src": "/icons/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
