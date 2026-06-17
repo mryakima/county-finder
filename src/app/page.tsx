@@ -318,9 +318,13 @@ export default function HomePage() {
 
   // ── Core lookup ───────────────────────────────────────────────────────────────
   const runLookup = useCallback(async (snap: PositionSnapshot, isBackgroundUpdate = false) => {
+    // Coords + elevation come straight from the device GPS and must update on every
+    // fix, independent of the network county lookup. (Previously a background update
+    // only set position inside the successful-fetch block, so coords/elevation froze
+    // whenever the server was unreachable — e.g. traveling at the edge of coverage.)
+    setPosition(snap);
     if (!isBackgroundUpdate) {
       setStatus("looking_up");
-      setPosition(snap);
     }
 
     abortRef.current?.abort();
@@ -365,17 +369,20 @@ export default function HomePage() {
         }
       }
     } catch (err) {
-      if ((err as Error).name === "AbortError") return;
-      if (!isBackgroundUpdate) {
-        const c = loadCache();
-        if (c) {
-          const inside = pointInGeometry(snap.lat, snap.lon, c.geometry);
-          setCached(c); setPosition(snap);
-          setStatus(inside ? "offline_verified" : "offline_unverified");
-        } else {
-          setStatus("api_error");
-          setErrorMessage("Could not reach the server and no cached result is available.");
-        }
+      if ((err as Error).name === "AbortError") return; // superseded by a newer fix
+      // The fetch failed. navigator.onLine can still report true at the edge of
+      // coverage, so treat the server as unreachable and drop into offline mode:
+      // this surfaces the offline indicator and starts the 15 s offline poll, which
+      // keeps coords/elevation live if watchPosition itself stalls. Position was
+      // already updated above, so a failed background update never freezes coords.
+      const c = loadCache();
+      if (c) {
+        const inside = pointInGeometry(snap.lat, snap.lon, c.geometry);
+        setCached(c);
+        setStatus(inside ? "offline_verified" : "offline_unverified");
+      } else if (!isBackgroundUpdate) {
+        setStatus("api_error");
+        setErrorMessage("Could not reach the server and no cached result is available.");
       }
     }
   }, []);
