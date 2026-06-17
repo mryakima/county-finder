@@ -572,11 +572,33 @@ export default function HomePage() {
       return;
     }
 
-    // Do NOT auto-request location here. A native permission prompt fired on page
-    // load (before the user has any context) is the main reason first-time iOS users
-    // tap "Don't Allow" — after which iOS won't re-prompt and they're stuck. Show the
-    // idle gate and wait for an explicit tap (see the "idle" branch in renderContent).
-    setStatus("idle");
+    // Decide between auto-starting and showing the idle gate.
+    //
+    // A native permission prompt fired on page load (before the user has any context)
+    // is the main reason first-time iOS users tap "Don't Allow" — after which iOS won't
+    // re-prompt and they're stuck. So first-timers / not-yet-granted users get the gate
+    // (see the "idle" branch in renderContent) and we only request location on their tap.
+    //
+    // But a RETURNING user who already granted permission doesn't need that primer —
+    // re-asking has no prompt risk, so we skip the gate and locate immediately. The
+    // Permissions API is the clean way to detect this. It's unreliable on iOS Safari
+    // (may be unsupported / reject), so every uncertain path falls back to the gate.
+    const perms = navigator.permissions;
+    if (perms?.query) {
+      perms
+        .query({ name: "geolocation" as PermissionName })
+        .then((res) => {
+          if (res.state === "granted") {
+            hasStartedRef.current = true;
+            startTracking(); // already granted — no prompt fires, so skip the gate
+          } else {
+            setStatus("idle");
+          }
+        })
+        .catch(() => setStatus("idle"));
+    } else {
+      setStatus("idle");
+    }
 
     const handleOffline = () => {
       setStatus((s) => {
@@ -838,25 +860,31 @@ function renderContent(p: ContentProps) {
   // ── Idle gate — wait for an explicit tap before requesting location ─────────
   // Priming the user with context here (and only prompting on tap) is what keeps
   // first-time iOS users from reflexively denying the cold permission prompt.
+  // Returning users who already granted are auto-started before reaching this
+  // branch (see the initial-load effect); a returning user only lands here when we
+  // couldn't confirm the grant, so they get a lighter, primer-free version.
 
-  if (status === "init" || status === "idle") {
+  if (status === "idle") {
     return (
       <div className="info-block">
         <span className="icon">📍</span>
         <h2>Find your county</h2>
-        <p>
-          Current County uses your phone&apos;s location to find which county
-          you&apos;re in. Your coordinates are used for the lookup, then
-          discarded — not stored on any server, and no account is needed.
-        </p>
-        <p style={{ fontSize: "var(--font-size-xs)" }}>
-          When you tap, your browser will ask to use your location. Choose
-          <strong> Allow</strong> to continue.
-        </p>
-        {cached && (
+        {cached ? (
           <p>
             Last time: <strong>{cached.result.countyName}</strong>, {cached.result.stateName}
           </p>
+        ) : (
+          <>
+            <p>
+              Current County uses your phone&apos;s location to find which county
+              you&apos;re in. Your coordinates are used for the lookup, then
+              discarded — not stored on any server, and no account is needed.
+            </p>
+            <p style={{ fontSize: "var(--font-size-xs)" }}>
+              When you tap, your browser will ask to use your location. Choose
+              <strong> Allow</strong> to continue.
+            </p>
+          </>
         )}
         <button className="btn btn-primary" style={{ marginTop: "var(--spacing-2)" }} onClick={p.onStart}>
           📍 Find my county
@@ -867,7 +895,7 @@ function renderContent(p: ContentProps) {
 
   // ── Locating / looking up ──────────────────────────────────────────────────
 
-  if (status === "locating" || status === "looking_up") {
+  if (status === "init" || status === "locating" || status === "looking_up") {
     return (
       <div className="status-card">
         <div className="status-badge locating">
