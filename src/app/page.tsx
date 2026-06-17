@@ -202,6 +202,10 @@ export default function HomePage() {
   const lastLookupMsRef = useRef<number>(0);
   const offlineRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // True once the user has explicitly started location (tapped "Find my county")
+  // or an offline returning-user flow began. Gates any code path that would
+  // otherwise request location before the user has opted in.
+  const hasStartedRef = useRef(false);
 
   // ── Modal sequencing: disclaimer (first-ever launch) then What’s New (each update) ──
   useEffect(() => {
@@ -457,6 +461,7 @@ export default function HomePage() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
+      if (!hasStartedRef.current) return; // user hasn't opted in yet — don't request location
       if (!navigator.geolocation) return;
 
       // Immediate one-shot fix — updates coords/altitude without any UI flash
@@ -541,6 +546,7 @@ export default function HomePage() {
 
     if (!checkOnline()) {
       if (c && navigator.geolocation) {
+        hasStartedRef.current = true;
         setStatus("locating");
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -557,7 +563,11 @@ export default function HomePage() {
       return;
     }
 
-    startTracking();
+    // Do NOT auto-request location here. A native permission prompt fired on page
+    // load (before the user has any context) is the main reason first-time iOS users
+    // tap "Don't Allow" — after which iOS won't re-prompt and they're stuck. Show the
+    // idle gate and wait for an explicit tap (see the "idle" branch in renderContent).
+    setStatus("idle");
 
     const handleOffline = () => {
       setStatus((s) => {
@@ -573,7 +583,9 @@ export default function HomePage() {
     return () => window.removeEventListener("offline", handleOffline);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleRefresh = () => { abortRef.current?.abort(); startTracking(); };
+  const handleStart = () => { hasStartedRef.current = true; startTracking(); };
+
+  const handleRefresh = () => { hasStartedRef.current = true; abortRef.current?.abort(); startTracking(); };
 
   const handleOpenMap = useCallback(() => {
     // Ensure cached state is populated (geometry lives in localStorage via saveCache)
@@ -684,6 +696,7 @@ export default function HomePage() {
         {renderContent({
           status, position, result, cached, errorMessage, coordFormat, cardFlash,
           isOnline, now,
+          onStart: handleStart,
           onRefresh: handleRefresh,
           onShare: handleShare,
           onToggleCoordFormat: toggleCoordFormat,
@@ -803,6 +816,7 @@ interface ContentProps {
   cardFlash: boolean;
   isOnline: boolean;
   now: number;
+  onStart: () => void;
   onRefresh: () => void;
   onShare: () => void;
   onToggleCoordFormat: () => void;
@@ -812,9 +826,39 @@ interface ContentProps {
 function renderContent(p: ContentProps) {
   const { status, position, result, cached, errorMessage, coordFormat, cardFlash, now } = p;
 
+  // ── Idle gate — wait for an explicit tap before requesting location ─────────
+  // Priming the user with context here (and only prompting on tap) is what keeps
+  // first-time iOS users from reflexively denying the cold permission prompt.
+
+  if (status === "init" || status === "idle") {
+    return (
+      <div className="info-block">
+        <span className="icon">📍</span>
+        <h2>Find your county</h2>
+        <p>
+          Current County uses your phone&apos;s location to find which county
+          you&apos;re in. Your coordinates are used for the lookup, then
+          discarded — not stored on any server, and no account is needed.
+        </p>
+        <p style={{ fontSize: "var(--font-size-xs)" }}>
+          When you tap, your browser will ask to use your location. Choose
+          <strong> Allow</strong> to continue.
+        </p>
+        {cached && (
+          <p>
+            Last time: <strong>{cached.result.countyName}</strong>, {cached.result.stateName}
+          </p>
+        )}
+        <button className="btn btn-primary" style={{ marginTop: "var(--spacing-2)" }} onClick={p.onStart}>
+          📍 Find my county
+        </button>
+      </div>
+    );
+  }
+
   // ── Locating / looking up ──────────────────────────────────────────────────
 
-  if (status === "init" || status === "locating" || status === "looking_up") {
+  if (status === "locating" || status === "looking_up") {
     return (
       <div className="status-card">
         <div className="status-badge locating">

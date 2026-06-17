@@ -112,7 +112,8 @@ export interface CachedResult {
 // ── UI state ──────────────────────────────────────────────────────────────────
 
 export type AppStatus =
-  | "init" // Starting up
+  | "init" // Starting up (brief pre-render tick before the load effect runs)
+  | "idle" // Loaded and online; waiting for the user to tap before requesting location
   | "locating" // Waiting for geolocation fix
   | "permission_denied" // User denied location permission
   | "no_geolocation" // Browser doesn't support geolocation
