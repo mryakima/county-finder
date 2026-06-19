@@ -92,6 +92,9 @@ export default function CountyMapInner(props: CountyMapProps) {
   const leafletRef    = useRef<any>(null);   // Leaflet library (loaded once)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const liveLayersRef = useRef<any[]>([]);   // layers removed+re-added on each position update
+  const countiesRef     = useRef<NearbyCounty[]>([]); // last-fetched county grid data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const countyLayersRef = useRef<any[]>([]); // county-grid layers, redrawn when the current county changes
 
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg,  setErrorMsg]  = useState("");
@@ -191,6 +194,55 @@ export default function CountyMapInner(props: CountyMapProps) {
     liveLayersRef.current = added;
   }
 
+  // Remove all county-grid layers from the map.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function clearCountyLayers(map: any) {
+    for (const layer of countyLayersRef.current) {
+      try { map.removeLayer(layer); } catch { /* already removed */ }
+    }
+    countyLayersRef.current = [];
+  }
+
+  // Draw the county grid, highlighting the county matching `currentGeoid`. Unlike the
+  // tiles this is redrawn whenever the current county changes, so crossing a line with
+  // the map open re-highlights the county you just entered.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function drawCountyGrid(L: any, map: any, counties: NearbyCounty[], currentGeoid: string) {
+    clearCountyLayers(map);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const added: any[] = [];
+
+    for (const county of counties) {
+      const isCurrent = county.geoid === currentGeoid;
+      const layer = L.geoJSON(county.geometry as Parameters<typeof L.geoJSON>[0], {
+        pane: "countyGrid",
+        style: isCurrent
+          ? { color: "#4a7c3f", weight: 2.5, fillColor: "#c8e6c9", fillOpacity: 0.35 }
+          : { color: "#888",    weight: 1,   fillColor: "#ffffff",  fillOpacity: 0.05 },
+      });
+      const label = county.stateAbbr ? `${county.nameLsad}, ${county.stateAbbr}` : county.nameLsad;
+      layer.bindPopup(`<strong style="font-size:13px">${label}</strong>`, { closeButton: false, maxWidth: 200 });
+      layer.addTo(map);
+      added.push(layer);
+
+      if (isCurrent) {
+        const [labelLon, labelLat] = county.labelCenter;
+        const marker = L.marker([labelLat, labelLon], {
+          icon: L.divIcon({
+            html: `<span style="background:rgba(74,124,63,0.85);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.3)">${county.nameLsad}</span>`,
+            className: "",
+            iconAnchor: undefined,
+          }),
+          interactive: false,
+          zIndexOffset: 100,
+        }).addTo(map);
+        added.push(marker);
+      }
+    }
+
+    countyLayersRef.current = added;
+  }
+
   // ── Init effect — runs once ────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
@@ -218,6 +270,11 @@ export default function CountyMapInner(props: CountyMapProps) {
         });
         mapRef.current = map;
 
+        // Dedicated pane for county polygons, kept below the live position layers
+        // so redrawing the grid (on a county change) never paints over the user dot.
+        map.createPane("countyGrid");
+        map.getPane("countyGrid")!.style.zIndex = "350";
+
         // OSM tile layer
         // crossOrigin: "anonymous" ensures tiles are cached as non-opaque responses
         // by the Service Worker, which means they can be reliably read back.
@@ -230,31 +287,9 @@ export default function CountyMapInner(props: CountyMapProps) {
           errorTileUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEAAQMAAABmvDolAAAAA1BMVEXe3t7MAlnBAAAAH0lEQVR42u3BMQEAAADCIPuntsUuYAAAAAAAAAAAABwIFAABEw1XZQAAAABJRU5ErkJggg==",
         }).addTo(map);
 
-        // County grid (static — not updated on position change)
-        for (const county of counties) {
-          const isCurrent = county.geoid === props.currentCountyGeoid;
-          const layer = L.geoJSON(county.geometry as Parameters<typeof L.geoJSON>[0], {
-            style: isCurrent
-              ? { color: "#4a7c3f", weight: 2.5, fillColor: "#c8e6c9", fillOpacity: 0.35 }
-              : { color: "#888",    weight: 1,   fillColor: "#ffffff",  fillOpacity: 0.05 },
-          });
-          const label = county.stateAbbr ? `${county.nameLsad}, ${county.stateAbbr}` : county.nameLsad;
-          layer.bindPopup(`<strong style="font-size:13px">${label}</strong>`, { closeButton: false, maxWidth: 200 });
-          layer.addTo(map);
-
-          if (isCurrent) {
-            const [labelLon, labelLat] = county.labelCenter;
-            L.marker([labelLat, labelLon], {
-              icon: L.divIcon({
-                html: `<span style="background:rgba(74,124,63,0.85);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.3)">${county.nameLsad}</span>`,
-                className: "",
-                iconAnchor: undefined,
-              }),
-              interactive: false,
-              zIndexOffset: 100,
-            }).addTo(map);
-          }
-        }
+        // County grid — highlight follows the current county (redrawn on change below)
+        countiesRef.current = counties;
+        drawCountyGrid(L, map, counties, props.currentCountyGeoid);
 
         // Initial live layers (position at mount time)
         drawLiveLayers(L, map, props);
@@ -298,6 +333,33 @@ export default function CountyMapInner(props: CountyMapProps) {
     props.nearestBoundaryLon,
     props.distanceToBoundaryM,
   ]);
+
+  // ── Re-highlight when the current county changes (e.g. crossing a line) ──────
+  // The grid is otherwise static, so without this the header shows the new county's
+  // name while the map keeps highlighting the old one. Re-style the already-loaded
+  // grid; if we've traveled beyond it, refetch around the current position.
+  useEffect(() => {
+    const L   = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return; // not ready yet — the init effect draws with the current geoid
+
+    const geoid = props.currentCountyGeoid;
+    if (countiesRef.current.some((c) => c.geoid === geoid)) {
+      drawCountyGrid(L, map, countiesRef.current, geoid);
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`/api/nearby-counties?lat=${props.userLat}&lon=${props.userLon}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { counties: NearbyCounty[] } | null) => {
+        if (cancelled || !data || !mapRef.current) return;
+        countiesRef.current = data.counties;
+        drawCountyGrid(leafletRef.current, mapRef.current, data.counties, geoid);
+      })
+      .catch(() => { /* keep the existing highlight rather than blanking the grid */ });
+    return () => { cancelled = true; };
+  }, [props.currentCountyGeoid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
