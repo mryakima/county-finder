@@ -652,9 +652,6 @@ body {
 .btn-ebird {
   background: #16a34a;
   color: white;
-  font-size: var(--font-size-sm);
-  padding: var(--spacing-1) var(--spacing-3);
-  min-height: 32px;
 }
 
 .btn-ebird:hover:not(:disabled) {
@@ -667,9 +664,6 @@ body {
   background: transparent;
   color: #16a34a;
   border: 1.5px solid #16a34a;
-  font-size: var(--font-size-sm);
-  padding: var(--spacing-1) var(--spacing-3);
-  min-height: 32px;
 }
 
 .btn-ebird-outline:hover:not(:disabled) {

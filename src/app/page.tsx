@@ -86,6 +86,12 @@ function eBirdTargetsUrl(stateAbbr: string, geoid: string): string {
   return `https://ebird.org/targets?r1=${eBirdRegionCode(stateAbbr, geoid)}`;
 }
 
+// Outbound link to eBird's hotspot map for this county (public region page — no login).
+function eBirdHotspotsUrl(stateAbbr: string, geoid: string): string {
+  if (!stateAbbr || geoid.length < 3) return "https://ebird.org/hotspots";
+  return `https://ebird.org/region/${eBirdRegionCode(stateAbbr, geoid)}/hotspots`;
+}
+
 const COUNTY_TYPE_ABBR: Record<string, string> = {
   "County": "Co.",
   "Parish": "Par",
@@ -211,6 +217,7 @@ export default function HomePage() {
   const [isOnline, setIsOnline] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [showMap, setShowMap] = useState(false);
+  const [showEbird, setShowEbird] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -755,6 +762,7 @@ export default function HomePage() {
           onShare: handleShare,
           onToggleCoordFormat: toggleCoordFormat,
           onOpenMap: handleOpenMap,
+          onOpenEbird: () => setShowEbird(true),
         })}
       </main>
 
@@ -780,6 +788,50 @@ export default function HomePage() {
         {" · "}
         Location is used only to find your county. GPS not stored. Lookups counted by state anonymously.
       </footer>
+
+      {/* ── eBird tools sheet ──────────────────────────────────────────────── */}
+      {showEbird && result && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.5)", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowEbird(false); }}
+        >
+          <div style={{
+            background: "var(--color-surface)",
+            borderTopLeftRadius: 20, borderTopRightRadius: 20,
+            padding: "var(--spacing-5) var(--spacing-4) calc(var(--spacing-6) + env(safe-area-inset-bottom, 0px))",
+            boxShadow: "0 -4px 24px rgba(0,0,0,0.25)",
+            maxWidth: 480, width: "100%", margin: "0 auto",
+          }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "var(--spacing-4)" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "var(--font-size-lg)" }}>eBird</div>
+                <div style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>{result.countyName}, {result.stateAbbr}</div>
+              </div>
+              <button
+                onClick={() => setShowEbird(false)}
+                aria-label="Close"
+                style={{ background: "var(--color-border)", border: "none", borderRadius: 8, width: 36, height: 36, fontSize: 20, color: "var(--color-text)", cursor: "pointer", flexShrink: 0, lineHeight: 1 }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-2)" }}>
+              <a className="btn btn-ebird" style={{ width: "100%", justifyContent: "center" }} href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-click")}>
+                County overview →
+              </a>
+              <a className="btn btn-ebird-outline" style={{ width: "100%", justifyContent: "center" }} href={eBirdTargetsUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-targets-click")}>
+                My Targets →
+              </a>
+              <a className="btn btn-ebird-outline" style={{ width: "100%", justifyContent: "center" }} href={eBirdHotspotsUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-hotspots-click")}>
+                Hotspot map →
+              </a>
+            </div>
+            <div style={{ marginTop: "var(--spacing-3)", fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", textAlign: "center", lineHeight: 1.5 }}>
+              Opens eBird in a new tab · Targets need your eBird login
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── County map modal ───────────────────────────────────────────────── */}
       {showMap && position && cached && (() => {
@@ -875,6 +927,7 @@ interface ContentProps {
   onShare: () => void;
   onToggleCoordFormat: () => void;
   onOpenMap: () => void;
+  onOpenEbird: () => void;
 }
 
 function renderContent(p: ContentProps) {
@@ -1061,30 +1114,10 @@ function renderContent(p: ContentProps) {
           <button className="btn btn-primary" onClick={p.onRefresh}>↻ Refresh</button>
           <button className="btn btn-ghost" onClick={p.onOpenMap}>🗺️ Map</button>
 
-          {/* eBird county link — grouped right under Map */}
-          <div className="ebird-row" style={{ marginBottom: 0 }}>
-            <a className="btn btn-ebird" style={{ width: "100%", justifyContent: "center" }} href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-click")}>
-              {result.countyBaseName} {countyTypeAbbr(result.countyName, result.countyBaseName)} eBird →
-            </a>
-          </div>
-
-          {/* eBird personal targets — opens eBird's Targets tool for this county using the
-              user's own eBird login. Outbound link only; no account data is touched. */}
-          <div>
-            <a
-              className="btn btn-ebird-outline"
-              style={{ width: "100%", justifyContent: "center" }}
-              href={eBirdTargetsUrl(result.stateAbbr, result.geoid)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => (window as any).umami?.track("ebird-targets-click")}
-            >
-              My eBird Targets →
-            </a>
-            <div style={{ marginTop: "var(--spacing-1)", fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", textAlign: "center" }}>
-              Opens eBird · Requires your eBird login
-            </div>
-          </div>
+          {/* eBird tools — opens a sheet of eBird links for this county */}
+          <button className="btn btn-ebird" style={{ width: "100%" }} onClick={p.onOpenEbird}>
+            eBird tools ▸
+          </button>
 
           <button className="btn btn-ghost" style={{ width: "100%" }} onClick={p.onShare}>⬆ Share position data</button>
           <div className="btn-row">
