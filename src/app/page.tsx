@@ -66,12 +66,28 @@ function formatIso(iso: string): string { return formatTimestamp(new Date(iso).g
 
 // ── eBird utilities ───────────────────────────────────────────────────────────
 
+function eBirdRegionCode(stateAbbr: string, geoid: string): string {
+  // eBird subnational2 (county) code, e.g. US-NM-003. geoid is the 5-digit FIPS;
+  // dropping the 2-digit state prefix leaves the 3-digit county code.
+  return `US-${stateAbbr}-${geoid.slice(2)}`;
+}
+
 function eBirdUrl(stateAbbr: string, geoid: string): string {
-  return `https://ebird.org/region/US-${stateAbbr}-${geoid.slice(2)}`;
+  return `https://ebird.org/region/${eBirdRegionCode(stateAbbr, geoid)}`;
+}
+
+// Outbound deep link to eBird's personal Targets ("needs") tool for this county.
+// Matches the URL eBird itself emits (verified): ?r1=<region>. eBird applies the
+// signed-in user's own comparison list / date defaults, and their login (session
+// cookies) travels with the navigation — we never read, store, or proxy any eBird
+// account data. Falls back to the bare Targets page if a region code can't be formed.
+function eBirdTargetsUrl(stateAbbr: string, geoid: string): string {
+  if (!stateAbbr || geoid.length < 3) return "https://ebird.org/targets";
+  return `https://ebird.org/targets?r1=${eBirdRegionCode(stateAbbr, geoid)}`;
 }
 
 const COUNTY_TYPE_ABBR: Record<string, string> = {
-  "County": "Co",
+  "County": "Co.",
   "Parish": "Par",
   "Borough": "Bor",
   "Municipality": "Mun",
@@ -1044,17 +1060,36 @@ function renderContent(p: ContentProps) {
         <div className="btn-group">
           <button className="btn btn-primary" onClick={p.onRefresh}>↻ Refresh</button>
           <button className="btn btn-ghost" onClick={p.onOpenMap}>🗺️ Map</button>
+
+          {/* eBird county link — grouped right under Map */}
+          <div className="ebird-row" style={{ marginBottom: 0 }}>
+            <a className="btn btn-ebird" style={{ width: "100%", justifyContent: "center" }} href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-click")}>
+              {result.countyBaseName} {countyTypeAbbr(result.countyName, result.countyBaseName)} eBird →
+            </a>
+          </div>
+
+          {/* eBird personal targets — opens eBird's Targets tool for this county using the
+              user's own eBird login. Outbound link only; no account data is touched. */}
+          <div>
+            <a
+              className="btn btn-ebird-outline"
+              style={{ width: "100%", justifyContent: "center" }}
+              href={eBirdTargetsUrl(result.stateAbbr, result.geoid)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => (window as any).umami?.track("ebird-targets-click")}
+            >
+              My eBird Targets →
+            </a>
+            <div style={{ marginTop: "var(--spacing-1)", fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", textAlign: "center" }}>
+              Opens eBird · Requires your eBird login
+            </div>
+          </div>
+
           <button className="btn btn-ghost" style={{ width: "100%" }} onClick={p.onShare}>⬆ Share position data</button>
           <div className="btn-row">
             <CopyButton label="Copy coords" text={coordsCopyText(position.lat, position.lon)} variant="secondary" />
           </div>
-        </div>
-
-        {/* eBird — bottom of card */}
-        <div className="ebird-row" style={{ marginTop: "var(--spacing-2)", marginBottom: 0 }}>
-          <a className="btn btn-ebird" style={{ width: "100%", justifyContent: "center" }} href={eBirdUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-click")}>
-            {result.countyBaseName} {countyTypeAbbr(result.countyName, result.countyBaseName)} eBird →
-          </a>
         </div>
       </div>
     );

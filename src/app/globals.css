@@ -661,6 +661,31 @@ body {
   background: #15803d;
 }
 
+/* Secondary eBird action (personal targets) — outline variant so it pairs with the
+   solid county link without two bright-green buttons competing. */
+.btn-ebird-outline {
+  background: transparent;
+  color: #16a34a;
+  border: 1.5px solid #16a34a;
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-1) var(--spacing-3);
+  min-height: 32px;
+}
+
+.btn-ebird-outline:hover:not(:disabled) {
+  background: #f0fdf4;
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn-ebird-outline {
+    color: #4ade80;
+    border-color: #4ade80;
+  }
+  .btn-ebird-outline:hover:not(:disabled) {
+    background: #14532d;
+  }
+}
+
 /* ── Coord-format toggle ────────────────────────────────────────────────────── */
 
 .coord-toggle {
