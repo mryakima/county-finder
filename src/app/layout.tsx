@@ -34,7 +34,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="icon" href="/icons/favicon.png" type="image/png" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         <script
           defer
