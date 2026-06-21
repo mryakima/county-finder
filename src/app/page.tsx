@@ -86,10 +86,21 @@ function eBirdTargetsUrl(stateAbbr: string, geoid: string): string {
   return `https://ebird.org/targets?r1=${eBirdRegionCode(stateAbbr, geoid)}`;
 }
 
-// Outbound link to eBird's hotspot map for this county (public region page — no login).
-function eBirdHotspotsUrl(stateAbbr: string, geoid: string): string {
-  if (!stateAbbr || geoid.length < 3) return "https://ebird.org/hotspots";
-  return `https://ebird.org/region/${eBirdRegionCode(stateAbbr, geoid)}/hotspots`;
+// eBird's hotspot MAP, framed to this county via a bounding-box viewport
+// (env.* = west/south/east/north). county.bbox maps 1:1 onto those params, so the
+// map opens directly on the county. Falls back to the region hotspot list, then the
+// bare map, if a bbox isn't available. Public URL — no login, nothing fetched.
+function eBirdHotspotsUrl(
+  bbox: [number, number, number, number] | undefined,
+  stateAbbr: string,
+  geoid: string
+): string {
+  if (bbox && bbox.length === 4) {
+    const [minX, minY, maxX, maxY] = bbox.map((n) => n.toFixed(6));
+    return `https://ebird.org/hotspots?env.minX=${minX}&env.minY=${minY}&env.maxX=${maxX}&env.maxY=${maxY}`;
+  }
+  if (stateAbbr && geoid.length >= 3) return `https://ebird.org/region/${eBirdRegionCode(stateAbbr, geoid)}/hotspots`;
+  return "https://ebird.org/hotspots";
 }
 
 const COUNTY_TYPE_ABBR: Record<string, string> = {
@@ -822,7 +833,7 @@ export default function HomePage() {
               <a className="btn btn-ebird-outline" style={{ width: "100%", justifyContent: "center" }} href={eBirdTargetsUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-targets-click")}>
                 My Targets →
               </a>
-              <a className="btn btn-ebird-outline" style={{ width: "100%", justifyContent: "center" }} href={eBirdHotspotsUrl(result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-hotspots-click")}>
+              <a className="btn btn-ebird-outline" style={{ width: "100%", justifyContent: "center" }} href={eBirdHotspotsUrl(result.bbox, result.stateAbbr, result.geoid)} target="_blank" rel="noopener noreferrer" onClick={() => (window as any).umami?.track("ebird-hotspots-click")}>
                 Hotspot map →
               </a>
             </div>

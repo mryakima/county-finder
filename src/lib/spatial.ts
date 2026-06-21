@@ -162,6 +162,7 @@ export function lookupCounty(
     countyName: county.nameLsad,
     countyBaseName: county.name,
     geoid: county.geoid,
+    bbox: county.bbox,
     geometry: county.geometry,
     distanceToBoundaryM: distanceM,
     bearingToBoundary: bearing,

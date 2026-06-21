@@ -51,6 +51,8 @@ export interface LookupSuccess {
   countyName: string; // "Catron County"
   countyBaseName: string; // "Catron"
   geoid: string; // "35003"
+  /** County bounding box [minLon, minLat, maxLon, maxLat] — used to build the eBird hotspot map link. */
+  bbox: [number, number, number, number];
   lat: number;
   lon: number;
   lookupTimestamp: string; // ISO-8601
