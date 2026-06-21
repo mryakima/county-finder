@@ -217,7 +217,7 @@ export default function CountyMapInner(props: CountyMapProps) {
       const layer = L.geoJSON(county.geometry as Parameters<typeof L.geoJSON>[0], {
         pane: "countyGrid",
         style: isCurrent
-          ? { color: "#4a7c3f", weight: 2.5, fillColor: "#c8e6c9", fillOpacity: 0.35 }
+          ? { color: "#ffc400", weight: 3.5, fillColor: "#ffc400", fillOpacity: 0.12 }
           : { color: "#888",    weight: 1,   fillColor: "#ffffff",  fillOpacity: 0.05 },
       });
       const label = county.stateAbbr ? `${county.nameLsad}, ${county.stateAbbr}` : county.nameLsad;
@@ -229,7 +229,7 @@ export default function CountyMapInner(props: CountyMapProps) {
         const [labelLon, labelLat] = county.labelCenter;
         const marker = L.marker([labelLat, labelLon], {
           icon: L.divIcon({
-            html: `<span style="background:rgba(74,124,63,0.85);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.3)">${county.nameLsad}</span>`,
+            html: `<span style="background:rgba(0,0,0,0.72);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.3)">${county.nameLsad}</span>`,
             className: "",
             iconAnchor: undefined,
           }),
@@ -275,17 +275,32 @@ export default function CountyMapInner(props: CountyMapProps) {
         map.createPane("countyGrid");
         map.getPane("countyGrid")!.style.zIndex = "350";
 
-        // OSM tile layer
-        // crossOrigin: "anonymous" ensures tiles are cached as non-opaque responses
-        // by the Service Worker, which means they can be reliably read back.
-        // errorTileUrl: a 1×1 transparent PNG so uncached offline tiles show
-        // as plain grey rather than broken-image icons.
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        // ── Base layers ──────────────────────────────────────────────────────
+        // Streets (OSM) is the default and the OFFLINE-capable layer: the Service
+        // Worker caches OSM tiles, and crossOrigin:"anonymous" keeps them readable
+        // from cache. errorTileUrl (transparent 1×1 PNG) renders uncached/offline
+        // tiles as plain grey instead of broken-image icons.
+        const EMPTY_TILE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEAAQMAAABmvDolAAAAA1BMVEXe3t7MAlnBAAAAH0lEQVR42u3BMQEAAADCIPuntsUuYAAAAAAAAAAAABwIFAABEw1XZQAAAABJRU5ErkJggg==";
+        const streets = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
           maxZoom: 19,
           crossOrigin: "anonymous",
-          errorTileUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEAAQMAAABmvDolAAAAA1BMVEXe3t7MAlnBAAAAH0lEQVR42u3BMQEAAADCIPuntsUuYAAAAAAAAAAAABwIFAABEw1XZQAAAABJRU5ErkJggg==",
-        }).addTo(map);
+          errorTileUrl: EMPTY_TILE,
+        });
+        // Aerial: USGS The National Map imagery — public domain, no API key, US coverage.
+        // ONLINE-ONLY: a different origin than OSM, so the Service Worker does not cache it
+        // (and we deliberately don't cache heavy imagery tiles for offline).
+        const aerial = L.tileLayer(
+          "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
+          {
+            attribution: 'Imagery: <a href="https://www.usgs.gov/">USGS</a> The National Map',
+            maxZoom: 19,
+            maxNativeZoom: 16,
+            errorTileUrl: EMPTY_TILE,
+          }
+        );
+        streets.addTo(map); // default base layer
+        L.control.layers({ Streets: streets, Aerial: aerial }, undefined, { position: "topright" }).addTo(map);
 
         // County grid — highlight follows the current county (redrawn on change below)
         countiesRef.current = counties;
