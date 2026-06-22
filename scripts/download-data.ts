@@ -30,6 +30,13 @@ const DATASET_SCALE = "500k";
 const SHAPEFILE_URL =
   `https://www2.census.gov/geo/tiger/GENZ${DATASET_YEAR}/shp/cb_${DATASET_YEAR}_us_county_${DATASET_SCALE}.zip`;
 
+// Census Population Estimates Program — county totals (latest vintage).
+// File columns include STATE, COUNTY (FIPS), SUMLEV (050 = county), and one
+// POPESTIMATE<year> column per estimate year; we read the most recent.
+const POP_VINTAGE = "2025";
+const POP_CSV_URL =
+  `https://www2.census.gov/programs-surveys/popest/datasets/2020-${POP_VINTAGE}/counties/totals/co-est${POP_VINTAGE}-alldata.csv`;
+
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const DATA_DIR = path.join(PROJECT_ROOT, "data");
 const TMP_DIR = path.join(DATA_DIR, "tmp");
@@ -162,6 +169,56 @@ function computeBbox(
   return [minLon, minLat, maxLon, maxLat];
 }
 
+/**
+ * Download and parse the Census PEP county-totals CSV into a GEOID→population map.
+ * Reads the most recent POPESTIMATE<year> column present in the header, so the
+ * map stays correct if a future vintage adds another year. County rows are
+ * SUMLEV 050; state/national summary rows are ignored.
+ */
+async function loadPopulation(): Promise<Map<string, number>> {
+  const csvPath = path.join(TMP_DIR, "co-est-population.csv");
+  await downloadFile(POP_CSV_URL, csvPath);
+  log(`Downloaded population estimates: ${POP_CSV_URL}`);
+
+  // PEP CSVs are Latin-1 (some county names carry accents); column data we read
+  // is ASCII/numeric, so the encoding only matters for clean header parsing.
+  const text = fs.readFileSync(csvPath, "latin1");
+  const lines = text.split(/\r?\n/).filter((l) => l.length > 0);
+  if (lines.length === 0) throw new Error("Population CSV is empty.");
+
+  const header = lines[0].split(",");
+  const idxSumlev = header.indexOf("SUMLEV");
+  const idxState = header.indexOf("STATE");
+  const idxCounty = header.indexOf("COUNTY");
+
+  // Pick the most recent POPESTIMATE<year> column.
+  let popYear = -1;
+  let idxPop = -1;
+  header.forEach((col, i) => {
+    const m = /^POPESTIMATE(\d{4})$/.exec(col);
+    if (m && Number(m[1]) > popYear) {
+      popYear = Number(m[1]);
+      idxPop = i;
+    }
+  });
+
+  if (idxSumlev < 0 || idxState < 0 || idxCounty < 0 || idxPop < 0) {
+    throw new Error("Population CSV missing expected columns (SUMLEV/STATE/COUNTY/POPESTIMATE).");
+  }
+
+  const map = new Map<string, number>();
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",");
+    if (cols[idxSumlev] !== "050") continue; // county level only
+    const geoid = cols[idxState].padStart(2, "0") + cols[idxCounty].padStart(3, "0");
+    const pop = Number(cols[idxPop]);
+    if (Number.isFinite(pop)) map.set(geoid, pop);
+  }
+
+  log(`Loaded population for ${map.size} counties (POPESTIMATE${popYear}).`);
+  return map;
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -200,6 +257,10 @@ async function main(): Promise<void> {
   if (!shpBuffer || !dbfBuffer) {
     throw new Error("Could not find .shp or .dbf files in the downloaded ZIP.");
   }
+
+  // 2b. Download county population estimates (joined by GEOID below)
+  const population = await loadPopulation();
+  let popMatched = 0;
 
   // 3. Parse shapefile to GeoJSON features
   log("Parsing shapefile...");
@@ -241,6 +302,12 @@ async function main(): Promise<void> {
     const geometry = feature.geometry as Polygon | MultiPolygon;
     const bbox = computeBbox(geometry);
 
+    // ALAND/AWATER are in square meters in the cartographic boundary DBF.
+    const aland = Number(props.ALAND ?? props.aland ?? 0) || 0;
+    const awater = Number(props.AWATER ?? props.awater ?? 0) || 0;
+    const pop = population.get(geoid);
+    if (pop !== undefined) popMatched++;
+
     counties.push({
       geoid,
       stateFp,
@@ -250,11 +317,15 @@ async function main(): Promise<void> {
       stateName,
       stateAbbr,
       bbox,
+      aland,
+      awater,
+      population: pop ?? null,
       geometry,
     });
   }
 
   log(`Processed ${total} features; kept ${counties.length}, skipped ${skipped} territories.`);
+  log(`Population matched for ${popMatched}/${counties.length} counties.`);
 
   // 4. Write output
   const output: ProcessedDataFile = {

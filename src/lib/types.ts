@@ -23,6 +23,12 @@ export interface CountyRecord {
   stateAbbr: string; // "NM"
   /** [minLon, minLat, maxLon, maxLat] */
   bbox: [number, number, number, number];
+  /** Land area in square meters (TIGER ALAND). */
+  aland: number;
+  /** Water area in square meters (TIGER AWATER). */
+  awater: number;
+  /** Latest Census Population Estimates Program county total; null if unmatched. */
+  population: number | null;
   geometry: Polygon | MultiPolygon;
 }
 
@@ -53,6 +59,12 @@ export interface LookupSuccess {
   geoid: string; // "35003"
   /** County bounding box [minLon, minLat, maxLon, maxLat] — used to build the eBird hotspot map link. */
   bbox: [number, number, number, number];
+  /** Land area in square meters (TIGER ALAND). */
+  aland: number;
+  /** Water area in square meters (TIGER AWATER). */
+  awater: number;
+  /** Latest Census Population Estimates Program county total; null if unavailable. */
+  population: number | null;
   lat: number;
   lon: number;
   lookupTimestamp: string; // ISO-8601

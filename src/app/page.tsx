@@ -57,12 +57,41 @@ function boundaryDistanceColor(m: number): string {
 }
 
 function formatTimestamp(ts: number): string {
+  // timeZoneName: "short" appends the zone abbreviation (e.g. "MDT"/"MST"),
+  // which itself encodes whether Daylight or Standard time is in effect.
   return new Date(ts).toLocaleString(undefined, {
     month: "short", day: "numeric",
     hour: "2-digit", minute: "2-digit",
+    timeZoneName: "short",
   });
 }
 function formatIso(iso: string): string { return formatTimestamp(new Date(iso).getTime()); }
+
+// ── County-detail formatting ──────────────────────────────────────────────────
+const M2_PER_SQMI = 2589988.110336;
+
+function sqMi(areaM2: number): number {
+  return areaM2 / M2_PER_SQMI;
+}
+function formatArea(areaM2: number): string {
+  const mi = sqMi(areaM2);
+  if (mi > 0 && mi < 1) return "<1 sq mi";
+  return `${Math.round(mi).toLocaleString()} sq mi`;
+}
+function formatPopulation(pop: number | null): string {
+  return pop === null ? "—" : pop.toLocaleString();
+}
+function formatDensity(pop: number | null, landM2: number): string {
+  const land = sqMi(landM2);
+  if (pop === null || land <= 0) return "—";
+  return `${Math.round(pop / land).toLocaleString()} /sq mi`;
+}
+function formatLandWaterRatio(landM2: number, waterM2: number): string {
+  if (waterM2 <= 0) return "all land";
+  if (landM2 <= 0) return "all water";
+  const r = landM2 / waterM2;
+  return r >= 1 ? `${Math.round(r).toLocaleString()} : 1` : `1 : ${Math.round(1 / r).toLocaleString()}`;
+}
 
 // ── eBird utilities ───────────────────────────────────────────────────────────
 
@@ -229,6 +258,7 @@ export default function HomePage() {
   const [now, setNow] = useState(Date.now());
   const [showMap, setShowMap] = useState(false);
   const [showEbird, setShowEbird] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -774,6 +804,7 @@ export default function HomePage() {
           onToggleCoordFormat: toggleCoordFormat,
           onOpenMap: handleOpenMap,
           onOpenEbird: () => setShowEbird(true),
+          onOpenDetails: () => setShowDetails(true),
         })}
       </main>
 
@@ -839,6 +870,47 @@ export default function HomePage() {
             </div>
             <div style={{ marginTop: "var(--spacing-3)", fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", textAlign: "center", lineHeight: 1.5 }}>
               Opens eBird in a new tab · Targets need your eBird login
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── County details sheet ───────────────────────────────────────────── */}
+      {showDetails && result && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.5)", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowDetails(false); }}
+        >
+          <div style={{
+            background: "var(--color-surface)",
+            borderTopLeftRadius: 20, borderTopRightRadius: 20,
+            padding: "var(--spacing-5) var(--spacing-4) calc(var(--spacing-6) + env(safe-area-inset-bottom, 0px))",
+            boxShadow: "0 -4px 24px rgba(0,0,0,0.25)",
+            maxWidth: 480, width: "100%", margin: "0 auto",
+          }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "var(--spacing-4)" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "var(--font-size-lg)" }}>County details</div>
+                <div style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>{result.countyName}, {result.stateAbbr}</div>
+              </div>
+              <button
+                onClick={() => setShowDetails(false)}
+                aria-label="Close"
+                style={{ background: "var(--color-border)", border: "none", borderRadius: 8, width: 36, height: 36, fontSize: 20, color: "var(--color-text)", cursor: "pointer", flexShrink: 0, lineHeight: 1 }}
+              >
+                ×
+              </button>
+            </div>
+            <div className="details-list">
+              <div className="detail-row"><span className="detail-label">Population</span><span className="detail-value">{formatPopulation(result.population)}</span></div>
+              <div className="detail-row"><span className="detail-label">Population density</span><span className="detail-value">{formatDensity(result.population, result.aland)}</span></div>
+              <div className="detail-row"><span className="detail-label">Land area</span><span className="detail-value">{formatArea(result.aland)}</span></div>
+              <div className="detail-row"><span className="detail-label">Water area</span><span className="detail-value">{formatArea(result.awater)}</span></div>
+              <div className="detail-row"><span className="detail-label">Land : water</span><span className="detail-value">{formatLandWaterRatio(result.aland, result.awater)}</span></div>
+              <div className="detail-row"><span className="detail-label">GEOID</span><span className="detail-value">{result.geoid}</span></div>
+            </div>
+            <div style={{ marginTop: "var(--spacing-3)", fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", textAlign: "center", lineHeight: 1.5 }}>
+              Population: U.S. Census Bureau estimate · Areas: Census TIGER
             </div>
           </div>
         </div>
@@ -939,6 +1011,7 @@ interface ContentProps {
   onToggleCoordFormat: () => void;
   onOpenMap: () => void;
   onOpenEbird: () => void;
+  onOpenDetails: () => void;
 }
 
 function renderContent(p: ContentProps) {
@@ -1114,16 +1187,15 @@ function renderContent(p: ContentProps) {
             <span className="detail-label">Lookup time</span>
             <span className="detail-value">{formatIso(result.lookupTimestamp)}</span>
           </div>
-          <div className="detail-row">
-            <span className="detail-label">GEOID</span>
-            <span className="detail-value">{result.geoid}</span>
-          </div>
         </div>
 
         {/* Actions */}
         <div className="btn-group">
           <button className="btn btn-primary" onClick={p.onRefresh}>↻ Refresh</button>
           <button className="btn btn-ghost" onClick={p.onOpenMap}>🗺️ Map</button>
+
+          {/* County details — opens a sheet of census facts for this county */}
+          <button className="btn btn-ghost" style={{ width: "100%" }} onClick={p.onOpenDetails}>ⓘ County details</button>
 
           {/* eBird tools — opens a sheet of eBird links for this county */}
           <button className="btn btn-ebird" style={{ width: "100%" }} onClick={p.onOpenEbird}>
