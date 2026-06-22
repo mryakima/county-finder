@@ -217,7 +217,7 @@ export default function CountyMapInner(props: CountyMapProps) {
       const layer = L.geoJSON(county.geometry as Parameters<typeof L.geoJSON>[0], {
         pane: "countyGrid",
         style: isCurrent
-          ? { color: "#ffc400", weight: 3.5, fillColor: "#ffc400", fillOpacity: 0.12 }
+          ? { color: "#ffc400", weight: 3.5, fillColor: "#ffc400", fillOpacity: 0.05 }
           : { color: "#888",    weight: 1,   fillColor: "#ffffff",  fillOpacity: 0.05 },
       });
       const label = county.stateAbbr ? `${county.nameLsad}, ${county.stateAbbr}` : county.nameLsad;
