@@ -577,6 +577,17 @@ body {
   color: var(--color-text-muted);
 }
 
+/* "You are here" marker — rides the current side, crossing the divider as you do */
+.dual-county-here {
+  margin-top: var(--spacing-1);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-error);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+}
+
 .dual-county-divider {
   display: flex;
   flex-direction: column;

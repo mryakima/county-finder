@@ -228,6 +228,55 @@ function formatStaleness(ts: number, now: number): { text: string; level: Stalen
 const LIVE_MIN_INTERVAL_MS = 3000; // min ms between background lookups
 const CLOSE_BOUNDARY_M = 91;       // ~300 ft — threshold for dual-county banner
 
+// ── County-crossing banner pinning ────────────────────────────────────────────
+// Near a county line the two counties hold FIXED sides — LEFT = the county you're
+// leaving (origin), RIGHT = the county you're entering (destination) — and only the
+// "you are here" highlight crosses the divider as you do. The API swaps
+// current/adjacent the instant you cross the line, so we pin the origin/destination
+// pair by name+state identity and keep it until a genuinely new line comes into
+// play (a new pair), at which point the current county becomes the new "leaving".
+interface CrossingSide { name: string; state: string; isCurrent: boolean }
+interface CrossingLayout { left: CrossingSide; right: CrossingSide }
+interface PinnedPair { left: { name: string; state: string }; right: { name: string; state: string } }
+
+function countyId(name: string, state: string): string { return `${name}|${state}`; }
+
+// Pure: given the live result (with a non-null adjacent county) and the current pin,
+// return the resolved left/right layout plus the pin to store. Establishing or
+// re-establishing always puts the current county on the left (leaving) and the
+// adjacent county on the right (entering); a matching pair keeps the existing pin so
+// names never swap sides — only `isCurrent` moves.
+function resolveCrossing(
+  result: LookupSuccess,
+  pin: PinnedPair | null
+): { layout: CrossingLayout; pin: PinnedPair } {
+  const curName = result.countyName;
+  const curState = result.stateAbbr;
+  const adjName = result.adjacentCountyName as string; // caller guarantees non-null
+  const adjState = result.adjacentCountyState ?? result.stateAbbr;
+
+  const curId = countyId(curName, curState);
+  const adjId = countyId(adjName, adjState);
+
+  const pinIds = pin
+    ? [countyId(pin.left.name, pin.left.state), countyId(pin.right.name, pin.right.state)]
+    : null;
+  const matches = !!pinIds && pinIds.includes(curId) && pinIds.includes(adjId);
+
+  const nextPin: PinnedPair = matches
+    ? pin!
+    : { left: { name: curName, state: curState }, right: { name: adjName, state: adjState } };
+
+  const leftIsCurrent = countyId(nextPin.left.name, nextPin.left.state) === curId;
+  return {
+    layout: {
+      left: { ...nextPin.left, isCurrent: leftIsCurrent },
+      right: { ...nextPin.right, isCurrent: !leftIsCurrent },
+    },
+    pin: nextPin,
+  };
+}
+
 // ── What's New content ───────────────────────────────────────────────────────
 // Bump WHATS_NEW_VERSION (YYYY-MM-DD or any string) when you update WHATS_NEW_ITEMS.
 // The modal fires once per version, independent of build/deploy timestamps.
@@ -263,6 +312,7 @@ export default function HomePage() {
   const abortRef = useRef<AbortController | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const lastGeoidRef = useRef<string | null>(null);
+  const pinnedCrossingRef = useRef<PinnedPair | null>(null);
   const lastLookupMsRef = useRef<number>(0);
   const offlineRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -697,6 +747,17 @@ export default function HomePage() {
   }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────────
+  // Resolve the dual-county banner layout, pinning the leaving/entering pair so the
+  // two county names hold their sides across the crossing (see resolveCrossing).
+  // Only computed when near a line with a real adjacent county; the coastline/border
+  // case (no adjacent county) falls back to the simple "you are here" banner.
+  let crossingLayout: CrossingLayout | null = null;
+  if (result && result.distanceToBoundaryM <= CLOSE_BOUNDARY_M && result.adjacentCountyName) {
+    const resolved = resolveCrossing(result, pinnedCrossingRef.current);
+    pinnedCrossingRef.current = resolved.pin;
+    crossingLayout = resolved.layout;
+  }
+
   return (
     <div className="app-shell">
       {countyChangedAlert && (
@@ -798,6 +859,7 @@ export default function HomePage() {
         {renderContent({
           status, position, result, cached, errorMessage, coordFormat, cardFlash,
           isOnline, now,
+          crossingLayout,
           onStart: handleStart,
           onRefresh: handleRefresh,
           onShare: handleShare,
@@ -1005,6 +1067,7 @@ interface ContentProps {
   cardFlash: boolean;
   isOnline: boolean;
   now: number;
+  crossingLayout: CrossingLayout | null;
   onStart: () => void;
   onRefresh: () => void;
   onShare: () => void;
@@ -1015,7 +1078,7 @@ interface ContentProps {
 }
 
 function renderContent(p: ContentProps) {
-  const { status, position, result, cached, errorMessage, coordFormat, cardFlash, now } = p;
+  const { status, position, result, cached, errorMessage, coordFormat, cardFlash, now, crossingLayout } = p;
 
   // ── Idle gate — wait for an explicit tap before requesting location ─────────
   // Priming the user with context here (and only prompting on tap) is what keeps
@@ -1091,8 +1154,31 @@ function renderContent(p: ContentProps) {
           ✓ Located
         </div>
 
-        {/* Dual-county banner when very close to line */}
-        {isClose ? (
+        {/* Dual-county banner when very close to a line. With a real adjacent
+            county the layout is PINNED — LEFT = the county you're leaving, RIGHT =
+            the county you're entering — and only the "you are here" highlight moves
+            across the divider as you cross (see resolveCrossing). At a coastline or
+            state edge (no adjacent county) it falls back to a simple banner. */}
+        {crossingLayout ? (
+          <div className="dual-county">
+            <div className={`dual-county-side ${crossingLayout.left.isCurrent ? "current" : "adjacent"}`}>
+              <div className="dual-county-label">Leaving</div>
+              <div className={`dual-county-name ${crossingLayout.left.isCurrent ? "current" : "adjacent"}`}>{crossingLayout.left.name}</div>
+              <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>{crossingLayout.left.state}</div>
+              {crossingLayout.left.isCurrent && <div className="dual-county-here">📍 You are here</div>}
+            </div>
+            <div className="dual-county-divider">
+              <div className="dual-county-dist">{distLabel}</div>
+              <div className="dual-county-dir">{cardinal}</div>
+            </div>
+            <div className={`dual-county-side ${crossingLayout.right.isCurrent ? "current" : "adjacent"}`}>
+              <div className="dual-county-label">Entering</div>
+              <div className={`dual-county-name ${crossingLayout.right.isCurrent ? "current" : "adjacent"}`}>{crossingLayout.right.name}</div>
+              <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>{crossingLayout.right.state}</div>
+              {crossingLayout.right.isCurrent && <div className="dual-county-here">📍 You are here</div>}
+            </div>
+          </div>
+        ) : isClose ? (
           <div className="dual-county">
             <div className="dual-county-side current">
               <div className="dual-county-label">You are here</div>
@@ -1104,17 +1190,7 @@ function renderContent(p: ContentProps) {
               <div className="dual-county-dir">{cardinal}</div>
             </div>
             <div className="dual-county-side adjacent">
-              {result.adjacentCountyName ? (
-                <>
-                  <div className="dual-county-label">Next county</div>
-                  <div className="dual-county-name adjacent">{result.adjacentCountyName}</div>
-                  {result.adjacentCountyState && result.adjacentCountyState !== result.stateAbbr && (
-                    <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>{result.adjacentCountyState}</div>
-                  )}
-                </>
-              ) : (
-                <div className="dual-county-label" style={{ paddingTop: "var(--spacing-3)" }}>Water / border</div>
-              )}
+              <div className="dual-county-label" style={{ paddingTop: "var(--spacing-3)" }}>Water / border</div>
             </div>
           </div>
         ) : (
