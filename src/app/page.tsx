@@ -227,6 +227,7 @@ function formatStaleness(ts: number, now: number): { text: string; level: Stalen
 
 const LIVE_MIN_INTERVAL_MS = 3000; // min ms between background lookups
 const CLOSE_BOUNDARY_M = 91;       // ~300 ft — threshold for dual-county banner
+const GPS_GRACE_MS = 30_000;       // suppress stale warning while GPS acquires on open
 
 // ── County-crossing banner pinning ────────────────────────────────────────────
 // Near a county line the two counties hold FIXED sides — LEFT = the county you're
@@ -316,6 +317,7 @@ export default function HomePage() {
   const lastLookupMsRef = useRef<number>(0);
   const offlineRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionStartRef = useRef<number>(Date.now());
   // True once the user has explicitly started location (tapped "Find my county")
   // or an offline returning-user flow began. Gates any code path that would
   // otherwise request location before the user has opted in.
@@ -858,7 +860,7 @@ export default function HomePage() {
       <main className="app-main">
         {renderContent({
           status, position, result, cached, errorMessage, coordFormat, cardFlash,
-          isOnline, now,
+          isOnline, now, sessionStart: sessionStartRef.current,
           crossingLayout,
           onStart: handleStart,
           onRefresh: handleRefresh,
@@ -1067,6 +1069,7 @@ interface ContentProps {
   cardFlash: boolean;
   isOnline: boolean;
   now: number;
+  sessionStart: number;
   crossingLayout: CrossingLayout | null;
   onStart: () => void;
   onRefresh: () => void;
@@ -1078,7 +1081,8 @@ interface ContentProps {
 }
 
 function renderContent(p: ContentProps) {
-  const { status, position, result, cached, errorMessage, coordFormat, cardFlash, now, crossingLayout } = p;
+  const { status, position, result, cached, errorMessage, coordFormat, cardFlash, now, sessionStart, crossingLayout } = p;
+  const inGracePeriod = (now - sessionStart) < GPS_GRACE_MS;
 
   // ── Idle gate — wait for an explicit tap before requesting location ─────────
   // Priming the user with context here (and only prompting on tap) is what keeps
@@ -1299,9 +1303,9 @@ function renderContent(p: ContentProps) {
           <div className="county-name">{cached.result.countyName}</div>
           <div className="state-name">{cached.result.stateName}</div>
         </div>
-        <div className={`staleness-banner ${stale.level}`}>
-          <span>Last verified {stale.text}</span>
-          {stale.level !== "fresh" && <div className="staleness-message">{stale.message}</div>}
+        <div className={`staleness-banner ${inGracePeriod ? "fresh" : stale.level}`}>
+          <span>{inGracePeriod ? "Acquiring GPS…" : `Last verified ${stale.text}`}</span>
+          {!inGracePeriod && stale.level !== "fresh" && <div className="staleness-message">{stale.message}</div>}
         </div>
         <div className="details-list">
           {pos && <>
@@ -1354,15 +1358,15 @@ function renderContent(p: ContentProps) {
           <div className="state-name">{cached.result.stateName}</div>
           <div className="unverified-label">Last known — not verified</div>
         </div>
-        <div className={`staleness-banner ${stale.level}`}>
-          <span>Last verified {stale.text}</span>
-          <div className="staleness-message">
+        <div className={`staleness-banner ${inGracePeriod ? "fresh" : stale.level}`}>
+          <span>{inGracePeriod ? "Acquiring GPS…" : `Last verified ${stale.text}`}</span>
+          {!inGracePeriod && <div className="staleness-message">
             {stale.level !== "fresh"
               ? stale.message
               : status === "offline_no_position"
                 ? "Could not get current location while offline."
                 : "Current location appears to be outside the cached county boundary."}
-          </div>
+          </div>}
         </div>
         <div className="details-list">
           {pos && <>
