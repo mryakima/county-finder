@@ -225,7 +225,9 @@ function formatStaleness(ts: number, now: number): { text: string; level: Stalen
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const LIVE_MIN_INTERVAL_MS = 3000; // min ms between background lookups
+const LIVE_MIN_INTERVAL_MS = 3000; // max ms between background lookups (time-based backstop)
+const LIVE_MIN_DISTANCE_M  = 30;   // also fire when position moves this far, regardless of time
+const LIVE_HARD_FLOOR_MS   = 1000; // never fire more than once per second even while moving fast
 const CLOSE_BOUNDARY_M = 91;       // ~300 ft — threshold for dual-county banner
 const GPS_GRACE_MS = 30_000;       // suppress stale warning while GPS acquires on open
 
@@ -315,6 +317,7 @@ export default function HomePage() {
   const lastGeoidRef = useRef<string | null>(null);
   const pinnedCrossingRef = useRef<PinnedPair | null>(null);
   const lastLookupMsRef = useRef<number>(0);
+  const lastLookupPosRef = useRef<{ lat: number; lon: number } | null>(null);
   const offlineRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionStartRef = useRef<number>(Date.now());
@@ -520,7 +523,8 @@ export default function HomePage() {
     if (!silent) {
       setStatus("locating");
       setErrorMessage(null);
-      lastLookupMsRef.current = 0; // allow immediate first lookup
+      lastLookupMsRef.current = 0;   // allow immediate first lookup
+      lastLookupPosRef.current = null;
     }
     // For silent restarts, lastLookupMsRef is left as-is so the rate limiter
     // still allows the next position through (it's been a while) but isFirstFix
@@ -546,8 +550,21 @@ export default function HomePage() {
           (window as any).umami?.track("location-granted");
         }
 
-        if (!isFirstFix && now - lastLookupMsRef.current < LIVE_MIN_INTERVAL_MS) return;
+        if (!isFirstFix) {
+          const elapsed = now - lastLookupMsRef.current;
+          if (elapsed < LIVE_HARD_FLOOR_MS) return; // never fire faster than 1/s
+          const prev = lastLookupPosRef.current;
+          const moved = prev
+            ? (() => {
+                const dLat = (snap.lat - prev.lat) * 111320;
+                const dLon = (snap.lon - prev.lon) * 111320 * Math.cos((snap.lat + prev.lat) / 2 * Math.PI / 180);
+                return Math.sqrt(dLat * dLat + dLon * dLon);
+              })()
+            : Infinity;
+          if (elapsed < LIVE_MIN_INTERVAL_MS && moved < LIVE_MIN_DISTANCE_M) return;
+        }
         lastLookupMsRef.current = now;
+        lastLookupPosRef.current = { lat: snap.lat, lon: snap.lon };
 
         if (!checkOnline()) {
           const c = loadCache();
